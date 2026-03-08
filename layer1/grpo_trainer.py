@@ -304,9 +304,9 @@ class GRPOPromptTrainer:
                 {"role": "user", "content": example["prompt"]},
                 {"role": "assistant", "content": example["completion"]},
             ]
-            return self._tokenizer.apply_chat_template(
+            return [self._tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=False,
-            )
+            )]
 
         trainer = SFTTrainer(
             model=self._model,
