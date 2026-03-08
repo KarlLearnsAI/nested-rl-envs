@@ -275,10 +275,11 @@ class GRPOPromptTrainer:
 
 class MockPromptOptimizer:
     """
-    CPU-friendly optimizer for testing the pipeline end-to-end.
+    Evaluates hand-written candidate prompts using real LLM agent + customer.
 
-    Evaluates hand-written candidate prompts (simulating the evolution
-    from naive to optimized) and returns the best one.
+    Tests the pipeline end-to-end with actual Llama 3.1 8B on both sides.
+    The prompt selection is "mock" (hand-picked instead of GRPO-generated),
+    but evaluation uses real LLM inference to measure actual agent behavior.
     """
 
     CANDIDATE_PROMPTS = [

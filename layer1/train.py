@@ -5,7 +5,7 @@ Usage:
     # Full GPU training (requires Colab/GPU + train deps)
     python -m layer1.train --mode train --steps 10
 
-    # CPU mock optimization (evaluates hand-written prompts)
+    # Mock optimization (evaluates hand-written prompts via real LLM agent)
     python -m layer1.train --mode mock --episodes 20
 
     # Evaluate a single prompt
