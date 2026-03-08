@@ -143,11 +143,13 @@ class GRPOPromptTrainer:
     Requires GPU and train dependencies: pip install -e ".[train]"
     """
 
-    def __init__(self, config: GRPOConfig, evaluator: PromptEvaluator):
+    def __init__(self, config: GRPOConfig, evaluator: PromptEvaluator, logger=None):
         self.config = config
         self.evaluator = evaluator
         self._model = None
         self._tokenizer = None
+        self._logger = logger
+        self._current_step = 0
 
     def setup_model(self):
         """Load model with Unsloth LoRA quantization."""
@@ -197,6 +199,14 @@ class GRPOPromptTrainer:
             rewards.append(result["mean_reward"])
             logger.info("Prompt reward: %.1f", result["mean_reward"])
 
+            if self._logger:
+                self._logger.log_iteration(
+                    step=self._current_step,
+                    prompt=system_prompt,
+                    eval_result=result,
+                )
+
+        self._current_step += 1
         return rewards
 
     def train(self):
@@ -315,9 +325,10 @@ class MockPromptOptimizer:
         ),
     ]
 
-    def __init__(self, evaluator: PromptEvaluator):
+    def __init__(self, evaluator: PromptEvaluator, logger=None):
         self.evaluator = evaluator
         self.results: list[dict[str, Any]] = []
+        self._logger = logger
 
     def optimize(self, num_episodes_per_prompt: int = 10) -> dict[str, Any]:
         """Evaluate all candidate prompts and return the best one."""
@@ -332,6 +343,9 @@ class MockPromptOptimizer:
             result["prompt_index"] = i
             self.results.append(result)
             print(f"Prompt {i}: mean_reward={result['mean_reward']:.1f}")
+
+            if self._logger:
+                self._logger.log_iteration(step=i, prompt=prompt, eval_result=result)
 
         self.results.sort(key=lambda r: r["mean_reward"], reverse=True)
         best = self.results[0]
