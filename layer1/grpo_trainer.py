@@ -295,6 +295,7 @@ class GRPOPromptTrainer:
             logging_steps=1,
             save_steps=999,  # don't save intermediate checkpoints
             max_seq_length=self.config.max_seq_length,
+            completion_only_loss=False,  # required when using formatting_func
         )
 
         def formatting_func(example):
