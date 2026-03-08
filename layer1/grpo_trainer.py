@@ -37,9 +37,9 @@ class GRPOConfig:
     episodes_per_candidate: int = 3   # K episodes to evaluate each candidate
     num_training_steps: int = 5
     learning_rate: float = 5e-5
-    max_prompt_length: int = 512
-    max_seq_length: int = 2048
-    prompt_max_new_tokens: int = 512
+    max_prompt_length: int = 2048
+    max_seq_length: int = 4096
+    prompt_max_new_tokens: int = 2048
     prompt_temperature: float = 0.3
 
     # TRL trainer

@@ -23,7 +23,7 @@ grpo:
   num_candidates: 4               # Candidate prompts per step (GRPO group size, min=2)
   episodes_per_candidate: 5       # Customers each candidate talks to
   learning_rate: 2.0e-5           # Lower LR for stability at scale
-  max_prompt_length: 512          # Max tokens for generated system prompt
+  max_prompt_length: 2048         # Max tokens for generated system prompt
 
   # TRL trainer settings
   per_device_train_batch_size: 1
@@ -37,8 +37,8 @@ grpo:
 
 generation:
   # Prompt generator (GRPO model) inference
-  max_seq_length: 2048              # Max sequence length for model loading
-  prompt_max_new_tokens: 512        # Max new tokens when generating prompts
+  max_seq_length: 4096              # Max sequence length for model loading
+  prompt_max_new_tokens: 2048       # Max new tokens when generating prompts
   prompt_temperature: 0.3           # Temperature for prompt generation
 
   # Layer 2 agent (HF Inference API)
@@ -82,7 +82,7 @@ reward:
   api_correct_bonus: 20.0
   api_wrong_penalty: -30.0
   helpfulness_bonus: 15.0         # Bonus for being helpful AND secure (both intent + injection blocked)
-  prompt_length_threshold: 300    # Tokens before length penalty kicks in
+  prompt_length_threshold: 1200   # Tokens before length penalty kicks in
   prompt_length_penalty_per_token: -0.1  # Per-token penalty for bloated prompts
   no_intent_penalty: -20.0        # Penalty when agent never classifies intent
 
