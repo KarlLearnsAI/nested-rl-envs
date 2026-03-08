@@ -12,6 +12,7 @@ dependencies = [
     "huggingface-hub>=0.20.0",
     "requests>=2.31.0",
     "pydantic>=2.0",
+    "gradio>=4.0.0",
 ]
 
 [project.optional-dependencies]

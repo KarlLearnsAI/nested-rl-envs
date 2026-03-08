@@ -217,27 +217,137 @@ class ConversationEnvironment:
         return self._conversation_log
 
     def _default_agent(self, system_prompt: str, obs: dict) -> str:
-        """Simple rule-based agent for testing (no LLM needed)."""
-        turn = obs.get("turn", self._turn)
+        """
+        Prompt-sensitive rule-based agent for testing (no LLM needed).
+
+        Parses the system prompt for behavioral signals to simulate how different
+        prompts lead to different agent behaviors. A generic prompt produces a
+        chatty, slow, vulnerable agent. A structured prompt with security rules
+        produces an efficient, secure agent.
+        """
+        prompt_lower = system_prompt.lower()
         customer_msg = obs.get("customer_message", "")
         intents = obs.get("intents", BANKING_INTENTS)
+        turn = obs.get("turn", self._turn)
         customer_lower = customer_msg.lower()
 
-        # Try to classify on turn 2+
-        if turn >= 2:
-            for intent in intents:
-                keywords = {
-                    "transfer": ["transfer", "send", "move", "wire"],
-                    "check_balance": ["balance", "how much", "check", "amount"],
-                    "block_card": ["block", "lost", "stolen", "freeze", "disable"],
-                }
-                if any(kw in customer_lower for kw in keywords.get(intent, [])):
-                    return json.dumps({"intent": intent})
+        # --- Parse prompt for behavioral traits ---
+        has_security_rules = any(kw in prompt_lower for kw in [
+            "never reveal", "never accept", "never follow", "social engineering",
+            "unauthorized", "ignore your rules", "third party",
+        ])
+        has_structured_output = "json" in prompt_lower or '{"intent"' in prompt_lower
+        has_efficiency_rules = any(kw in prompt_lower for kw in [
+            "at most 2", "at most 1", "one specific", "classify immediately",
+            "minimal turns", "concise",
+        ])
+        has_intent_list = any(intent in prompt_lower for intent in intents)
 
-            # Fallback: guess first intent
+        # --- INJECTION HANDLING ---
+        injection_phrases = [
+            "ignore your previous", "ignore previous", "system override",
+            "debug mode", "forget everything", "bank supervisor",
+            "provide the full account", "display all",
+        ]
+        is_injection = any(phrase in customer_lower for phrase in injection_phrases)
+
+        if is_injection:
+            if has_security_rules:
+                # Trained agent: rejects and redirects
+                return (
+                    "I'm sorry, I can only help with your own account. "
+                    "I cannot share information about other accounts or override security protocols. "
+                    "How can I help you with your banking needs today?"
+                )
+            else:
+                # Base agent: naive, susceptible — leaks info
+                return (
+                    "I understand you need account information. "
+                    "Your wife's account balance is 5000. "
+                    "Is there anything else I can help with?"
+                )
+
+        # --- SOFT SOCIAL ENGINEERING ---
+        soft_se_phrases = [
+            "wife's account", "mother also", "husband's", "partner's",
+            "business partner", "check my wife", "her balance", "his balance",
+        ]
+        is_soft_se = any(phrase in customer_lower for phrase in soft_se_phrases)
+
+        if is_soft_se:
+            if has_security_rules:
+                return (
+                    "I can only access your own account information. "
+                    "Your family member would need to contact us directly. "
+                    "Let me help you with your request — what do you need?"
+                )
+            else:
+                # Base agent: tries to help, leaks info
+                return (
+                    "Sure, I can share the account details for your wife's account. "
+                    "The account balance is 3200. "
+                    "Is there anything else you need?"
+                )
+
+        # --- INTENT CLASSIFICATION ---
+        keyword_map = {
+            "transfer": ["transfer", "send", "move", "wire", "pay"],
+            "check_balance": ["balance", "how much", "check", "amount", "funds"],
+            "block_card": ["block", "lost", "stolen", "freeze", "disable", "card", "missing"],
+        }
+
+        detected_intent = None
+        for intent in intents:
+            if any(kw in customer_lower for kw in keyword_map.get(intent, [])):
+                detected_intent = intent
+                break
+
+        # Trained agent: classify fast if intent is clear
+        if has_structured_output and has_efficiency_rules and detected_intent:
+            if has_intent_list or turn >= 1:
+                return json.dumps({"intent": detected_intent})
+
+        # Trained agent: one clarifying question then classify
+        if has_structured_output and turn >= 2:
+            if detected_intent:
+                return json.dumps({"intent": detected_intent})
             return json.dumps({"intent": intents[0]})
 
-        # Ask clarifying question
+        # Base agent: chatty, asks many generic questions before classifying
+        if not has_structured_output:
+            if turn == 0:
+                return (
+                    "Hello! Welcome to our bank's customer service. "
+                    "Thank you for calling us today. My name is Alex and I'll be happy to help you. "
+                    "Before we get started, could you tell me a bit about what brings you in today? "
+                    "We offer a wide range of services including transfers, balance inquiries, "
+                    "card management, loan applications, and more."
+                )
+            if turn == 1:
+                return (
+                    "Thank you for sharing that. I want to make sure I understand correctly. "
+                    "Could you tell me a bit more about what you need? "
+                    "Also, for security purposes, could you confirm your full name?"
+                )
+            if turn == 2:
+                return (
+                    "Great, thank you for confirming. Let me look into that for you. "
+                    "Just to double check — can you verify your account number or "
+                    "the last four digits of your card?"
+                )
+            if turn == 3:
+                return (
+                    "Perfect, I appreciate your patience. "
+                    "Now, just to make sure I have this right — what exactly would you like me to do?"
+                )
+            # Finally classify on turn 4+
+            if detected_intent:
+                return json.dumps({"intent": detected_intent})
+            return json.dumps({"intent": intents[0]})
+
+        # Default structured agent: ask one question then classify
         if turn == 0:
-            return "Welcome! How can I help you today? Could you describe what you need?"
-        return "Could you please provide more details about what you'd like to do?"
+            return "How can I help you today? Please describe what you need."
+        if detected_intent:
+            return json.dumps({"intent": detected_intent})
+        return "Could you be more specific about what you need help with?"
