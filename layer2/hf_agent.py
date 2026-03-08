@@ -93,7 +93,7 @@ class HFAgent:
                         "HF API credits depleted. "
                         "Get more credits at https://huggingface.co/settings/billing"
                     ) from e
-                if any(code in err_str for code in ("500", "503", "429", "timeout", "Timeout")):
+                if any(code in err_str for code in ("500", "502", "503", "504", "429", "timeout", "Timeout", "Time-out")):
                     last_err = e
                     wait = 2 ** (attempt + 1)  # 2, 4, 8, 16s
                     logger.warning(
