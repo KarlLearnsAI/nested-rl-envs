@@ -32,6 +32,30 @@ grpo:
   save_steps: 10
 
 
+# --- Generation Parameters ---
+# Token limits and temperatures for LLM inference.
+
+generation:
+  # Prompt generator (GRPO model) inference
+  max_seq_length: 2048              # Max sequence length for model loading
+  prompt_max_new_tokens: 512        # Max new tokens when generating prompts
+  prompt_temperature: 0.3           # Temperature for prompt generation
+
+  # Layer 2 agent (HF Inference API)
+  agent_max_tokens: 300             # Max tokens for agent responses
+  agent_temperature: 0.3            # Temperature for agent responses
+
+  # Customer simulator (HF Inference API)
+  customer_max_tokens: 200          # Max tokens for customer replies
+  customer_temperature: 0.7         # Temperature for customer diversity
+
+
+# --- Personas ---
+
+personas:
+  count: 100                        # Number of customer personas to generate
+
+
 # --- Layer 2: Conversation Environment ---
 # The simulated customer support environment.
 
@@ -64,7 +88,7 @@ reward:
 
 report:
   enabled: true
-  output_dir: "./reports"
+  output_dir: "/workspace/output/reports"
   eval_episodes: 5                # Episodes per checkpoint evaluation
   example_customers: 3            # Example conversations in report
 
@@ -72,5 +96,5 @@ report:
 # --- Paths ---
 
 paths:
-  output_dir: "./grpo_output"
-  log_dir: "./logs"
+  output_dir: "/workspace/output/grpo_output"
+  log_dir: "/workspace/output/logs"

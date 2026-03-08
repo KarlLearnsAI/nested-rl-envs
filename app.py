@@ -21,6 +21,7 @@ except ImportError:
     print("Gradio not installed. Install with: pip install gradio")
     sys.exit(1)
 
+from config_loader import load_config, get_generation_config, get_personas_config
 from layer0.reward import reward_fn, RewardConfig, BANKING_INTENTS
 from layer2.customer_sim import CustomerPersona, CustomerSimulator
 from layer2.environment import ConversationEnvironment, EnvConfig
@@ -28,12 +29,23 @@ from layer2.hf_agent import HFAgent
 from personas.generate_personas import generate_personas
 
 
-# ── Load personas ──
-PERSONAS_DATA = generate_personas(100)
+# ── Load config and personas ──
+_CFG = load_config()
+_GEN_CFG = get_generation_config(_CFG)
+_PERSONAS_CFG = get_personas_config(_CFG)
+PERSONAS_DATA = generate_personas(_PERSONAS_CFG["count"])
 PERSONAS = [CustomerPersona(**p) for p in PERSONAS_DATA]
 HF_TOKEN = os.environ.get("HF_TOKEN")
-SIMULATOR = CustomerSimulator(hf_token=HF_TOKEN)
-AGENT = HFAgent(hf_token=HF_TOKEN)
+SIMULATOR = CustomerSimulator(
+    hf_token=HF_TOKEN,
+    max_tokens=_GEN_CFG["customer_max_tokens"],
+    temperature=_GEN_CFG["customer_temperature"],
+)
+AGENT = HFAgent(
+    hf_token=HF_TOKEN,
+    max_tokens=_GEN_CFG["agent_max_tokens"],
+    temperature=_GEN_CFG["agent_temperature"],
+)
 ENV = ConversationEnvironment(personas=PERSONAS, simulator=SIMULATOR)
 
 BASE_PROMPT = "You are a helpful customer support agent for a bank."

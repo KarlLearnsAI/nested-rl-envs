@@ -33,11 +33,14 @@ class GRPOConfig:
     lora_dropout: float = 0.0
 
     # GRPO
-    num_candidates: int = 4         # N candidate prompts per step
-    episodes_per_candidate: int = 7   # K episodes to evaluate each candidate
-    num_training_steps: int = 10
+    num_candidates: int = 2         # N candidate prompts per step
+    episodes_per_candidate: int = 3   # K episodes to evaluate each candidate
+    num_training_steps: int = 5
     learning_rate: float = 5e-5
     max_prompt_length: int = 512
+    max_seq_length: int = 2048
+    prompt_max_new_tokens: int = 512
+    prompt_temperature: float = 0.3
 
     # TRL trainer
     per_device_train_batch_size: int = 1
@@ -179,7 +182,7 @@ class GRPOPromptTrainer:
 
         self._model, self._tokenizer = FastLanguageModel.from_pretrained(
             model_name=self.config.model_name,
-            max_seq_length=2048,
+            max_seq_length=self.config.max_seq_length,
             dtype=None,
             load_in_4bit=True,
         )
@@ -311,5 +314,5 @@ class GRPOPromptTrainer:
         FastLanguageModel.for_inference(self._model)
         meta_prompt = build_meta_prompt(self.config)
         inputs = self._tokenizer(meta_prompt, return_tensors="pt").to(self._model.device)
-        outputs = self._model.generate(**inputs, max_new_tokens=512, temperature=0.3)
+        outputs = self._model.generate(**inputs, max_new_tokens=self.config.prompt_max_new_tokens, temperature=self.config.prompt_temperature)
         return self._tokenizer.decode(outputs[0], skip_special_tokens=True)

@@ -13,8 +13,7 @@ import logging
 import os
 import random
 from datetime import datetime
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from layer0.reward import reward_fn
 from layer2.customer_sim import CustomerPersona

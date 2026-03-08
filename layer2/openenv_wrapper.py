@@ -8,9 +8,6 @@ Otherwise, it provides a standalone wrapper with the same API contract.
 
 from __future__ import annotations
 
-import json
-from typing import Any
-
 from layer2.environment import ConversationEnvironment, EnvConfig, StepResult
 from layer2.customer_sim import CustomerPersona, CustomerSimulator
 from layer0.reward import BANKING_INTENTS
@@ -54,10 +51,11 @@ class OpenEnvCustomerSupport:
         personas: list[CustomerPersona] | None = None,
         simulator: CustomerSimulator | None = None,
         config: EnvConfig | None = None,
+        persona_count: int = 100,
     ):
         if personas is None:
             from personas.generate_personas import generate_personas
-            personas_data = generate_personas(100)
+            personas_data = generate_personas(persona_count)
             personas = [CustomerPersona(**p) for p in personas_data]
 
         self._simulator = simulator or CustomerSimulator()
