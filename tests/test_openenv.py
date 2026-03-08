@@ -1,6 +1,14 @@
 """Tests for OpenEnv wrapper."""
 
+import os
+import pytest
+
 from layer2.openenv_wrapper import OpenEnvCustomerSupport, ENV_METADATA
+
+requires_hf_token = pytest.mark.skipif(
+    not os.environ.get("HF_TOKEN"),
+    reason="HF_TOKEN required for LLM-based tests",
+)
 
 
 class TestOpenEnvWrapper:
@@ -23,6 +31,7 @@ class TestOpenEnvWrapper:
         assert isinstance(terminated, bool)
         assert isinstance(truncated, bool)
 
+    @requires_hf_token
     def test_render(self):
         env = OpenEnvCustomerSupport()
         env.reset(seed=42)

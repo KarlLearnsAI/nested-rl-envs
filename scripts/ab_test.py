@@ -2,10 +2,10 @@
 A/B Test: Compare base prompt vs trained/optimized prompt.
 
 Uses real LLM (Llama 3.1 8B via HF Inference API) for both
-the customer simulator and the voice agent when HF_TOKEN is set.
+the customer simulator and the voice agent.
 
 Usage:
-    python -m scripts.ab_test [--episodes 10] [--mode llm|rule]
+    python -m scripts.ab_test [--episodes 10]
 """
 
 from __future__ import annotations
@@ -52,7 +52,6 @@ TRAINED_PROMPT = (
 def run_ab_test(
     num_episodes: int = 10,
     hf_token: str | None = None,
-    mode: str = "llm",
 ) -> dict:
     """
     Run A/B test comparing base vs trained prompt.
@@ -60,24 +59,28 @@ def run_ab_test(
     Args:
         num_episodes: Number of episodes per prompt
         hf_token: HuggingFace API token (auto-loaded from .env if not provided)
-        mode: "llm" for real LLM agent+customer, "rule" for rule-based fallback
     """
     token = hf_token or os.environ.get("HF_TOKEN")
+    if not token:
+        raise RuntimeError(
+            "HF_TOKEN is required. Set it via --hf-token or the HF_TOKEN environment variable."
+        )
 
     # Load personas
     personas_data = generate_personas(num_episodes)
     personas = [CustomerPersona(**p) for p in personas_data]
 
-    # Initialize simulator (uses LLM if token available)
-    simulator = CustomerSimulator(hf_token=token if mode == "llm" else None)
+    # Initialize simulator and agent
+    simulator = CustomerSimulator(hf_token=token)
+    agent = HFAgent(hf_token=token)
 
-    # Initialize LLM agent (uses LLM if token available)
-    agent = HFAgent(hf_token=token if mode == "llm" else None)
+    if not agent.is_llm_available:
+        raise RuntimeError(
+            "LLM agent could not be initialized. Check your HF_TOKEN and huggingface_hub installation."
+        )
 
-    using_llm = mode == "llm" and agent.is_llm_available
-    print(f"Mode: {'LLM (Llama 3.1 8B)' if using_llm else 'Rule-based'}")
-    print(f"Customer sim: {'LLM' if simulator._client else 'Rule-based'}")
-    print(f"Agent: {'LLM' if agent.is_llm_available else 'Rule-based'}")
+    print(f"Mode: LLM (Llama 3.1 8B)")
+    print(f"Episodes per prompt: {num_episodes}")
 
     # Create environment
     env = ConversationEnvironment(
@@ -102,12 +105,9 @@ def run_ab_test(
         sample_conversations = []
 
         for i, persona in enumerate(personas):
-            # Use LLM agent if available, otherwise default rule-based
-            agent_fn = agent if using_llm else None
-
             log = env.run_episode(
                 system_prompt=prompt,
-                agent_fn=agent_fn,
+                agent_fn=agent,
                 persona=persona,
             )
             r = reward_fn(log)
@@ -148,7 +148,6 @@ def run_ab_test(
             "min_reward": min(rewards),
             "max_reward": max(rewards),
             "total_episodes": num_episodes,
-            "mode": "llm" if using_llm else "rule",
             "sample_conversations": sample_conversations,
         }
 
@@ -162,8 +161,6 @@ def print_results(results: dict):
     print(f"{'A/B TEST RESULTS':^62}")
     print("=" * 62)
 
-    mode = results.get("base", {}).get("mode", "unknown")
-    print(f"{'Mode: ' + mode:^62}")
     print("-" * 62)
     print(f"{'Metric':<25} {'Base Prompt':>15} {'Trained Prompt':>18}")
     print("-" * 62)
@@ -205,15 +202,12 @@ def main():
     parser = argparse.ArgumentParser(description="A/B test: base vs trained prompt")
     parser.add_argument("--episodes", type=int, default=10, help="Number of episodes per prompt")
     parser.add_argument("--hf-token", type=str, default=None, help="HuggingFace API token")
-    parser.add_argument("--mode", choices=["llm", "rule"], default="llm",
-                        help="llm=real LLM agent+customer, rule=rule-based fallback")
     parser.add_argument("--output", type=str, default=None, help="Save results to JSON file")
     args = parser.parse_args()
 
     results = run_ab_test(
         num_episodes=args.episodes,
         hf_token=args.hf_token,
-        mode=args.mode,
     )
 
     print_results(results)
