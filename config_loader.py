@@ -116,6 +116,7 @@ def get_generation_config(cfg: dict[str, Any]) -> dict[str, Any]:
     """Extract generation/inference settings from config."""
     gen = cfg.get("generation", {})
     return {
+        "inference_backend": gen.get("inference_backend", "auto"),
         "max_seq_length": gen.get("max_seq_length", 4096),
         "prompt_max_new_tokens": gen.get("prompt_max_new_tokens", 2048),
         "prompt_temperature": gen.get("prompt_temperature", 0.3),

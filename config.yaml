@@ -36,6 +36,12 @@ grpo:
 # Token limits and temperatures for LLM inference.
 
 generation:
+  # Inference backend for Layer 2 (agent + customer simulator)
+  # "auto" = local GPU if available, else HF API
+  # "local" = force local (requires GPU + transformers)
+  # "api" = force HF Inference API
+  inference_backend: "auto"
+
   # Prompt generator (GRPO model) inference
   max_seq_length: 4096              # Max sequence length for model loading
   prompt_max_new_tokens: 2048       # Max new tokens when generating prompts
