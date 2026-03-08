@@ -298,13 +298,15 @@ class GRPOPromptTrainer:
             completion_only_loss=False,  # required when using formatting_func
         )
 
+        tokenizer = self._tokenizer  # local ref to avoid closure over self
+
         def formatting_func(example):
             """Format each SFT example as a chat conversation."""
             messages = [
                 {"role": "user", "content": example["prompt"]},
                 {"role": "assistant", "content": example["completion"]},
             ]
-            return [self._tokenizer.apply_chat_template(
+            return [tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=False,
             )]
 
@@ -314,6 +316,7 @@ class GRPOPromptTrainer:
             train_dataset=dataset,
             tokenizer=self._tokenizer,
             formatting_func=formatting_func,
+            dataset_num_proc=1,  # avoid multiprocessing pickle issues
         )
 
         trainer.train()
