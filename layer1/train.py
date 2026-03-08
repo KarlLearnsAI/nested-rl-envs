@@ -65,6 +65,35 @@ def verify_volume_mount(paths_cfg: dict) -> None:
             raise
 
 
+def _try_load_local_model(gen_cfg: dict, hf_token: str | None):
+    """Try to load Llama locally; returns LocalLlamaModel or None."""
+    backend = gen_cfg.get("inference_backend", "auto")
+    if backend == "api":
+        logger.info("inference_backend=api — using HF Inference API")
+        return None
+
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            if backend == "local":
+                raise RuntimeError("inference_backend=local but no CUDA GPU available")
+            logger.info("No CUDA GPU — falling back to HF Inference API")
+            return None
+
+        from layer2.local_model import get_shared_model
+        model = get_shared_model(hf_token=hf_token)
+        logger.info("Using local Llama model for Layer 2 inference")
+        return model
+    except ImportError:
+        if backend == "local":
+            raise RuntimeError(
+                "inference_backend=local but torch/transformers not installed. "
+                "Install with: pip install -e '.[train]'"
+            )
+        logger.info("torch/transformers not available — using HF Inference API")
+        return None
+
+
 def load_evaluator(
     hf_token: str | None = None,
     gen_cfg: dict | None = None,
@@ -72,13 +101,17 @@ def load_evaluator(
 ) -> PromptEvaluator:
     """Load personas and create the evaluator with LLM agent."""
     token = hf_token or os.environ.get("HF_TOKEN")
-    if not token:
-        raise RuntimeError(
-            "HF_TOKEN is required. Set it via --hf-token or the HF_TOKEN environment variable."
-        )
-
     gen_cfg = gen_cfg or {}
     personas_cfg = personas_cfg or {}
+
+    # Try local model first
+    local_model = _try_load_local_model(gen_cfg, token)
+
+    if local_model is None and not token:
+        raise RuntimeError(
+            "HF_TOKEN is required when not using local model. "
+            "Set it via --hf-token or the HF_TOKEN environment variable."
+        )
 
     persona_count = personas_cfg.get("count", 100)
     personas_data = generate_personas(persona_count)
@@ -87,23 +120,27 @@ def load_evaluator(
         hf_token=token,
         max_tokens=gen_cfg.get("customer_max_tokens", 200),
         temperature=gen_cfg.get("customer_temperature", 0.7),
+        local_model=local_model,
     )
 
     agent = HFAgent(
         hf_token=token,
         max_tokens=gen_cfg.get("agent_max_tokens", 300),
         temperature=gen_cfg.get("agent_temperature", 0.3),
+        local_model=local_model,
     )
     if not agent.is_llm_available:
         raise RuntimeError(
             "LLM agent could not be initialized. Check your HF_TOKEN and huggingface_hub installation."
         )
-    logger.info("Using LLM agent (Llama 3.1 8B)")
+
+    backend_name = "local model" if local_model else "HF Inference API"
+    logger.info("Using LLM agent (Llama 3.1 8B via %s)", backend_name)
 
     return PromptEvaluator(personas=personas, simulator=simulator, agent_fn=agent)
 
 
-def _print_config_banner(config: GRPOConfig, report_cfg: dict, paths_cfg: dict):
+def _print_config_banner(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, gen_cfg: dict | None = None):
     """Print all training parameters from config."""
     total_conversations = (
         config.num_training_steps * config.num_candidates * config.episodes_per_candidate
@@ -128,8 +165,9 @@ def _print_config_banner(config: GRPOConfig, report_cfg: dict, paths_cfg: dict):
     print(f"  Domain:                        {config.domain}")
     print(f"  Intents:                       {config.intents}")
     print(f"  Max Turns per Conversation:    (from env config)")
-    print(f"  Customer Rep Agent:            Llama 3.1 8B (HF Inference API)")
-    print(f"  Customer Simulator:            Llama 3.1 8B (HF Inference API)")
+    print(f"  Inference Backend:             {gen_cfg.get('inference_backend', 'auto') if gen_cfg else 'auto'}")
+    print(f"  Customer Rep Agent:            Llama 3.1 8B")
+    print(f"  Customer Simulator:            Llama 3.1 8B")
     print()
     print(f"  --- Totals ---")
     print(f"  Total LLM Conversations:       ~{total_conversations}")
@@ -141,7 +179,7 @@ def _print_config_banner(config: GRPOConfig, report_cfg: dict, paths_cfg: dict):
 
 def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: str | None, gen_cfg: dict | None = None, personas_cfg: dict | None = None, upload_cfg: dict | None = None):
     """Run GRPO training."""
-    _print_config_banner(config, report_cfg, paths_cfg)
+    _print_config_banner(config, report_cfg, paths_cfg, gen_cfg=gen_cfg)
 
     # Verify volume is mounted before doing any expensive work
     all_paths = dict(paths_cfg)

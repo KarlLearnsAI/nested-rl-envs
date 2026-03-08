@@ -1,8 +1,8 @@
 """
 Customer Simulator — drives the simulated customer side of conversations.
 
-Uses Llama 3.1 8B Instruct via HF Inference API to generate realistic
-customer responses based on persona configurations.
+Uses Llama 3.1 8B Instruct to generate realistic customer responses
+based on persona configurations. Supports both local model and HF Inference API.
 """
 
 from __future__ import annotations
@@ -62,20 +62,36 @@ class CustomerPersona:
 
 class CustomerSimulator:
     """
-    Generates customer replies using HF Inference API (Llama 3.1 8B).
+    Generates customer replies using Llama 3.1 8B Instruct.
 
-    Requires a valid HF_TOKEN to function.
+    Supports two backends:
+    - local: loads model in-process via transformers (pass local_model=...)
+    - api: uses HF Inference API (pass hf_token=...)
     """
 
     MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
 
-    def __init__(self, hf_token: str | None = None, max_tokens: int = 200, temperature: float = 0.7):
-        self.hf_token = hf_token or os.environ.get("HF_TOKEN")
+    def __init__(
+        self,
+        hf_token: str | None = None,
+        max_tokens: int = 200,
+        temperature: float = 0.7,
+        local_model: Any = None,
+    ):
         self.max_tokens = max_tokens
         self.temperature = temperature
+        self._local_model = local_model
         self._client: Any = None
-        if self.hf_token and InferenceClient is not None:
-            self._client = InferenceClient(token=self.hf_token)
+
+        if local_model is None:
+            # Fall back to HF Inference API
+            self.hf_token = hf_token or os.environ.get("HF_TOKEN")
+            if self.hf_token and InferenceClient is not None:
+                self._client = InferenceClient(token=self.hf_token)
+
+    @property
+    def is_available(self) -> bool:
+        return self._local_model is not None or self._client is not None
 
     def generate_reply(
         self,
@@ -85,16 +101,29 @@ class CustomerSimulator:
         max_retries: int = 4,
     ) -> str:
         """Generate the next customer reply given the conversation so far."""
+        messages = self._build_messages(persona, conversation_history, agent_message)
+
+        if self._local_model is not None:
+            return self._local_model.generate(
+                messages, max_tokens=self.max_tokens, temperature=self.temperature,
+            )
+
         if self._client is None:
             raise RuntimeError(
-                "HF Inference API client is not available. "
-                "Set HF_TOKEN environment variable with a valid HuggingFace token."
+                "No inference backend available. "
+                "Pass local_model=... or set HF_TOKEN for API access."
             )
 
         last_err = None
         for attempt in range(max_retries + 1):
             try:
-                return self._generate_llm_reply(persona, conversation_history, agent_message)
+                response = self._client.chat_completion(
+                    model=self.MODEL_ID,
+                    messages=messages,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                )
+                return response.choices[0].message.content.strip()
             except Exception as e:
                 err_str = str(e)
                 if "402" in err_str or "Payment Required" in err_str:
@@ -103,7 +132,7 @@ class CustomerSimulator:
                         "Get more credits at https://huggingface.co/settings/billing"
                     ) from e
                 # Retry on transient server errors (500, 503, 429, timeouts)
-                if any(code in err_str for code in ("500", "503", "429", "timeout", "Timeout")):
+                if any(code in err_str for code in ("500", "502", "503", "504", "429", "timeout", "Timeout", "Time-out")):
                     last_err = e
                     wait = 2 ** (attempt + 1)  # 2, 4, 8, 16s
                     logger.warning(
@@ -115,27 +144,17 @@ class CustomerSimulator:
                 raise
         raise last_err  # type: ignore[misc]
 
-    def _generate_llm_reply(
+    def _build_messages(
         self,
         persona: CustomerPersona,
         conversation_history: list[dict[str, str]],
         agent_message: str,
-    ) -> str:
+    ) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": persona.to_system_prompt()}]
-
         for msg in conversation_history:
             if msg["role"] == "customer":
                 messages.append({"role": "assistant", "content": msg["content"]})
             else:
                 messages.append({"role": "user", "content": msg["content"]})
-
-        # The latest agent message
         messages.append({"role": "user", "content": agent_message})
-
-        response = self._client.chat_completion(
-            model=self.MODEL_ID,
-            messages=messages,
-            max_tokens=self.max_tokens,
-            temperature=self.temperature,
-        )
-        return response.choices[0].message.content.strip()
+        return messages

@@ -49,9 +49,9 @@ def make_grpo_config(cfg: dict[str, Any]):
         episodes_per_candidate=grpo.get("episodes_per_candidate", 3),
         num_training_steps=grpo.get("num_training_steps", 5),
         learning_rate=grpo.get("learning_rate", 5e-5),
-        max_prompt_length=grpo.get("max_prompt_length", 512),
-        max_seq_length=gen.get("max_seq_length", 2048),
-        prompt_max_new_tokens=gen.get("prompt_max_new_tokens", 512),
+        max_prompt_length=grpo.get("max_prompt_length", 2048),
+        max_seq_length=gen.get("max_seq_length", 4096),
+        prompt_max_new_tokens=gen.get("prompt_max_new_tokens", 2048),
         prompt_temperature=gen.get("prompt_temperature", 0.3),
         per_device_train_batch_size=grpo.get("per_device_train_batch_size", 1),
         gradient_accumulation_steps=grpo.get("gradient_accumulation_steps", 4),
@@ -116,8 +116,9 @@ def get_generation_config(cfg: dict[str, Any]) -> dict[str, Any]:
     """Extract generation/inference settings from config."""
     gen = cfg.get("generation", {})
     return {
-        "max_seq_length": gen.get("max_seq_length", 2048),
-        "prompt_max_new_tokens": gen.get("prompt_max_new_tokens", 512),
+        "inference_backend": gen.get("inference_backend", "auto"),
+        "max_seq_length": gen.get("max_seq_length", 4096),
+        "prompt_max_new_tokens": gen.get("prompt_max_new_tokens", 2048),
         "prompt_temperature": gen.get("prompt_temperature", 0.3),
         "agent_max_tokens": gen.get("agent_max_tokens", 300),
         "agent_temperature": gen.get("agent_temperature", 0.3),
