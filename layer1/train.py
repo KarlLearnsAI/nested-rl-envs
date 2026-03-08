@@ -64,8 +64,35 @@ def load_evaluator(hf_token: str | None = None) -> PromptEvaluator:
     return PromptEvaluator(personas=personas, simulator=simulator, agent_fn=agent)
 
 
+def _print_config_banner(mode: str, args):
+    """Print training configuration with both technical and domain names."""
+    print(f"\n{'='*70}")
+    print(f"  TRAINING CONFIGURATION")
+    print(f"{'='*70}")
+    print(f"  Mode:                          {mode}")
+    if mode == "mock":
+        n_prompts = len(MockPromptOptimizer.CANDIDATE_PROMPTS)
+        print(f"  Steps / System Prompts:        {n_prompts} (hand-written)")
+    else:
+        print(f"  Steps / GRPO Iterations:       {args.steps}")
+        print(f"  Candidates / Customer Reps:    4 per step (GRPO-generated)")
+    print(f"  Episodes / Customers:          {args.episodes} per prompt")
+    print(f"  Customer Rep Agent:            Llama 3.1 8B (HF Inference API)")
+    print(f"  Customer Simulator:            Llama 3.1 8B (HF Inference API)")
+    print(f"  Total LLM conversations:       ~{_estimate_conversations(mode, args)}")
+    print(f"  Report generation:             {'yes' if args.report else 'no'}")
+    print(f"{'='*70}\n")
+
+
+def _estimate_conversations(mode: str, args) -> int:
+    if mode == "mock":
+        return len(MockPromptOptimizer.CANDIDATE_PROMPTS) * args.episodes
+    return args.steps * 4 * args.episodes  # steps × candidates × episodes
+
+
 def run_mock(args):
     """Run mock optimization with hand-written prompts."""
+    _print_config_banner("mock", args)
     evaluator = load_evaluator(args.hf_token)
     training_logger = TrainingLogger(
         log_dir=args.log_dir,
@@ -102,6 +129,7 @@ def run_mock(args):
 
 def run_train(args):
     """Run full GRPO training (requires GPU)."""
+    _print_config_banner("train", args)
     evaluator = load_evaluator(args.hf_token)
     training_logger = TrainingLogger(log_dir=args.log_dir, total_steps=args.steps)
     config = GRPOConfig(

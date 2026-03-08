@@ -100,6 +100,7 @@ class PromptEvaluator:
         system_prompt: str,
         num_episodes: int = 10,
         personas_subset: list[CustomerPersona] | None = None,
+        step_label: str = "",
     ) -> dict[str, Any]:
         """
         Run num_episodes conversations with the given system prompt.
@@ -112,7 +113,13 @@ class PromptEvaluator:
 
         rewards = []
         logs = []
-        for persona in personas_to_use[:num_episodes]:
+        total = min(num_episodes, len(personas_to_use))
+        for ei, persona in enumerate(personas_to_use[:num_episodes]):
+            logger.info(
+                "%s  Episode/Customer %d/%d — persona=%d intent=%s SE=%s",
+                step_label, ei + 1, total,
+                persona.id, persona.true_intent, persona.social_engineering,
+            )
             log = self.env.run_episode(
                 system_prompt=system_prompt,
                 agent_fn=self.agent_fn,
@@ -121,9 +128,15 @@ class PromptEvaluator:
             r = reward_fn(log)
             rewards.append(r)
             logs.append(log.to_dict())
+            logger.info(
+                "%s  Episode/Customer %d/%d — reward=%.1f correct=%s turns=%d",
+                step_label, ei + 1, total,
+                r, log.intent_correct, log.turns,
+            )
 
+        mean_r = sum(rewards) / len(rewards) if rewards else 0.0
         return {
-            "mean_reward": sum(rewards) / len(rewards) if rewards else 0.0,
+            "mean_reward": mean_r,
             "total_reward": sum(rewards),
             "min_reward": min(rewards) if rewards else 0.0,
             "max_reward": max(rewards) if rewards else 0.0,
@@ -186,18 +199,35 @@ class GRPOPromptTrainer:
     def _reward_function(self, completions, **kwargs):
         """GRPO reward: evaluate each generated system prompt in Layer 2."""
         rewards = []
-        for completion in completions:
+        total_candidates = len(completions)
+        for ci, completion in enumerate(completions):
             if isinstance(completion, list):
                 system_prompt = completion[0].get("content", str(completion))
             else:
                 system_prompt = str(completion)
 
+            step_label = (
+                f"[Step/GRPO Iteration {self._current_step + 1}/{self.config.num_training_steps}]"
+                f"[Candidate/Customer Rep {ci + 1}/{total_candidates}]"
+            )
+            logger.info(
+                "%s Evaluating generated prompt (%d chars): %.80s%s",
+                step_label, len(system_prompt),
+                system_prompt, "..." if len(system_prompt) > 80 else "",
+            )
+
             result = self.evaluator.evaluate_prompt(
                 system_prompt,
                 num_episodes=self.config.episodes_per_candidate,
+                step_label=step_label,
             )
             rewards.append(result["mean_reward"])
-            logger.info("Prompt reward: %.1f", result["mean_reward"])
+
+            logger.info(
+                "%s Done — mean_reward=%.1f  min=%.1f  max=%.1f",
+                step_label, result["mean_reward"],
+                result["min_reward"], result["max_reward"],
+            )
 
             if self._logger:
                 self._logger.log_iteration(
@@ -248,7 +278,19 @@ class GRPOPromptTrainer:
             tokenizer=self._tokenizer,
         )
 
-        logger.info("Starting GRPO training: %d steps", self.config.num_training_steps)
+        logger.info(
+            "=== GRPO Training: %d Steps/GRPO Iterations × "
+            "%d Candidates/Customer Rep configs × "
+            "%d Episodes/Customers each ===",
+            self.config.num_training_steps,
+            self.config.num_candidates,
+            self.config.episodes_per_candidate,
+        )
+        logger.info(
+            "Model/Prompt Generator: %s  |  LoRA r=%d α=%d  |  LR=%.1e",
+            self.config.model_name, self.config.lora_r,
+            self.config.lora_alpha, self.config.learning_rate,
+        )
         trainer.train()
 
         # Save the trained model
@@ -334,16 +376,37 @@ class MockPromptOptimizer:
     def optimize(self, num_episodes_per_prompt: int = 10) -> dict[str, Any]:
         """Evaluate all candidate prompts and return the best one."""
         self.results = []
+        total_prompts = len(self.CANDIDATE_PROMPTS)
+
+        logger.info(
+            "=== Mock Optimization: %d System Prompts/Customer Rep configs × "
+            "%d Episodes/Customers each ===",
+            total_prompts, num_episodes_per_prompt,
+        )
 
         for i, prompt in enumerate(self.CANDIDATE_PROMPTS):
+            step_label = (
+                f"[Step/Customer Rep {i + 1}/{total_prompts}]"
+            )
+            logger.info(
+                "%s Evaluating system prompt (%d chars): %.80s%s",
+                step_label, len(prompt), prompt, "..." if len(prompt) > 80 else "",
+            )
+
             result = self.evaluator.evaluate_prompt(
                 system_prompt=prompt,
                 num_episodes=num_episodes_per_prompt,
+                step_label=step_label,
             )
             result["prompt"] = prompt
             result["prompt_index"] = i
             self.results.append(result)
-            print(f"Prompt {i}: mean_reward={result['mean_reward']:.1f}")
+
+            logger.info(
+                "%s Done — mean_reward=%.1f  min=%.1f  max=%.1f",
+                step_label, result["mean_reward"],
+                result["min_reward"], result["max_reward"],
+            )
 
             if self._logger:
                 self._logger.log_iteration(step=i, prompt=prompt, eval_result=result)
