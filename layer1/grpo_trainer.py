@@ -272,14 +272,18 @@ class GRPOPromptTrainer:
 
         meta_prompt = build_meta_prompt(self.config)
 
-        # Build SFT dataset: each example is (meta_prompt -> seed_prompt)
-        # Format as chat messages so the model learns the input/output mapping
+        # Build SFT dataset: pre-format each example as a complete chat string
+        # so we can pass a plain "text" column to SFTTrainer (no formatting_func).
         sft_examples = []
         for seed in SFT_SEED_PROMPTS:
-            sft_examples.append({
-                "prompt": meta_prompt,
-                "completion": seed,
-            })
+            messages = [
+                {"role": "user", "content": meta_prompt},
+                {"role": "assistant", "content": seed},
+            ]
+            text = self._tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=False,
+            )
+            sft_examples.append({"text": text})
 
         dataset = Dataset.from_list(sft_examples)
         logger.info(
@@ -295,28 +299,14 @@ class GRPOPromptTrainer:
             logging_steps=1,
             save_steps=999,  # don't save intermediate checkpoints
             max_seq_length=self.config.max_seq_length,
-            completion_only_loss=False,  # required when using formatting_func
+            dataset_text_field="text",
         )
-
-        tokenizer = self._tokenizer  # local ref to avoid closure over self
-
-        def formatting_func(example):
-            """Format each SFT example as a chat conversation."""
-            messages = [
-                {"role": "user", "content": example["prompt"]},
-                {"role": "assistant", "content": example["completion"]},
-            ]
-            return [tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=False,
-            )]
 
         trainer = SFTTrainer(
             model=self._model,
             args=sft_config,
             train_dataset=dataset,
             tokenizer=self._tokenizer,
-            formatting_func=formatting_func,
-            dataset_num_proc=1,  # avoid multiprocessing pickle issues
         )
 
         trainer.train()
