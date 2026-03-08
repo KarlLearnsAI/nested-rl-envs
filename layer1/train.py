@@ -170,6 +170,19 @@ def main():
                         help="Prompt to evaluate (eval mode)")
     parser.add_argument("--no-report", action="store_true",
                         help="Skip report generation")
+    parser.add_argument("--report-dir", type=str, default=None,
+                        help="Override report output directory from config")
+    parser.add_argument("--log-dir", type=str, default=None,
+                        help="Override log directory from config")
+    parser.add_argument("--eval-episodes", type=int, default=None,
+                        help="Override eval episodes for report from config")
+    parser.add_argument("--example-customers", type=int, default=None,
+                        help="Override example customers in report from config")
+    parser.add_argument("--output", type=str, default=None,
+                        help="Save results to JSON file")
+    # Legacy flags (accepted for backwards compatibility with external runners)
+    parser.add_argument("--llm-agent", action="store_true", default=True,
+                        help="(deprecated, always true) Use LLM agent")
     args = parser.parse_args()
 
     # Load config from YAML
@@ -188,6 +201,14 @@ def main():
         paths_cfg["output_dir"] = args.output_dir
     if args.no_report:
         report_cfg["enabled"] = False
+    if args.report_dir is not None:
+        report_cfg["output_dir"] = args.report_dir
+    if args.log_dir is not None:
+        paths_cfg["log_dir"] = args.log_dir
+    if args.eval_episodes is not None:
+        report_cfg["eval_episodes"] = args.eval_episodes
+    if args.example_customers is not None:
+        report_cfg["example_customers"] = args.example_customers
 
     if args.mode == "train":
         run_train(grpo_config, report_cfg, paths_cfg, args.hf_token)
