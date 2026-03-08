@@ -39,6 +39,12 @@ class GRPOConfig:
     learning_rate: float = 5e-5
     max_prompt_length: int = 512
 
+    # TRL trainer
+    per_device_train_batch_size: int = 1
+    gradient_accumulation_steps: int = 4
+    logging_steps: int = 1
+    save_steps: int = 10
+
     # Environment
     domain: str = "banking"
     intents: list[str] = field(default_factory=lambda: list(BANKING_INTENTS))
@@ -258,13 +264,13 @@ class GRPOPromptTrainer:
         training_args = TRLGRPOConfig(
             output_dir=self.config.output_dir,
             num_train_epochs=1,
-            per_device_train_batch_size=1,
-            gradient_accumulation_steps=4,
+            per_device_train_batch_size=self.config.per_device_train_batch_size,
+            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
             learning_rate=self.config.learning_rate,
             num_generations=self.config.num_candidates,
             max_completion_length=self.config.max_prompt_length,
-            logging_steps=1,
-            save_steps=10,
+            logging_steps=self.config.logging_steps,
+            save_steps=self.config.save_steps,
         )
 
         trainer = GRPOTrainer(

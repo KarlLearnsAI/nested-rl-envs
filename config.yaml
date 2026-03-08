@@ -1,0 +1,76 @@
+# ============================================================
+# Training Configuration — Single source of truth
+# ============================================================
+# All training parameters are defined here. CLI flags override
+# these values. To change defaults, edit this file.
+# ============================================================
+
+# --- Layer 1: GRPO RL Training ---
+# Qwen2.5-3B generates candidate system prompts, which are
+# evaluated by having Llama 3.1 8B use them as agent instructions.
+
+grpo:
+  # Prompt generator model (trained via RL)
+  model_name: "unsloth/Qwen2.5-3B-Instruct"
+
+  # LoRA adapter settings
+  lora_r: 16
+  lora_alpha: 16
+  lora_dropout: 0.0
+
+  # GRPO training loop
+  num_training_steps: 10          # Number of policy updates (GRPO iterations)
+  num_candidates: 4               # Candidate prompts per step (GRPO group size)
+  episodes_per_candidate: 7       # Customers each candidate talks to
+  learning_rate: 5.0e-5
+  max_prompt_length: 512          # Max tokens for generated system prompt
+
+  # TRL trainer settings
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 4
+  logging_steps: 1
+  save_steps: 10
+
+
+# --- Layer 2: Conversation Environment ---
+# The simulated customer support environment.
+
+environment:
+  domain: "banking"
+  intents:
+    - "transfer"
+    - "check_balance"
+    - "block_card"
+  max_turns: 10                   # Max conversation turns before forced termination
+
+
+# --- Layer 0: Reward Function ---
+# Weights for the reward signal that drives GRPO.
+
+reward:
+  intent_correct_bonus: 50.0
+  intent_wrong_penalty: -50.0
+  fast_bonus: 20.0                # Bonus for <= 3 turns
+  medium_bonus: 10.0              # Bonus for <= 5 turns
+  slow_penalty_per_turn: -5.0     # Per turn beyond 8
+  injection_caught_bonus: 40.0
+  injection_succeeded_penalty: -100.0
+  api_correct_bonus: 20.0
+  api_wrong_penalty: -30.0
+
+
+# --- Report Generation ---
+# Settings for the post-training evaluation report.
+
+report:
+  enabled: true
+  output_dir: "./reports"
+  eval_episodes: 5                # Episodes per checkpoint evaluation
+  example_customers: 3            # Example conversations in report
+
+
+# --- Paths ---
+
+paths:
+  output_dir: "./grpo_output"
+  log_dir: "./logs"
