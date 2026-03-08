@@ -244,7 +244,7 @@ class ReportGenerator:
         bars = ax2.bar(x, eval_rewards, color=["#e74c3c", "#f39c12", "#27ae60"])
         ax2.set_xticks(list(x))
         ax2.set_xticklabels([l.split("(")[1].rstrip(")") for l in labels])
-        ax2.set_ylabel("Mean Reward (30-episode eval)")
+        ax2.set_ylabel(f"Mean Reward ({checkpoint_evals[0].get('num_episodes', '?')}-episode eval)")
         ax2.set_title("Checkpoint Comparison")
         ax2.grid(True, alpha=0.3, axis="y")
 
@@ -383,7 +383,7 @@ class ReportGenerator:
         lines.append("")
 
         # Example conversations
-        lines.append("## Example Conversations (10 Customers x 3 Agents)")
+        lines.append(f"## Example Conversations ({len(example_conversations)} Customers x {len(checkpoints)} Agents)")
         lines.append("")
         customer_letters = "ABCDEFGHIJ"
         for ci, cust in enumerate(example_conversations):
