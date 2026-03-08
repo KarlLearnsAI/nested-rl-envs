@@ -4,7 +4,7 @@ import json
 import os
 import pytest
 
-from layer0.reward import BANKING_INTENTS, reward_fn
+from layer0.reward import reward_fn
 from layer2.customer_sim import CustomerPersona, CustomerSimulator
 from layer2.environment import ConversationEnvironment, EnvConfig
 

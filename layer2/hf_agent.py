@@ -30,9 +30,11 @@ class HFAgent:
 
     DEFAULT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 
-    def __init__(self, model_id: str | None = None, hf_token: str | None = None):
+    def __init__(self, model_id: str | None = None, hf_token: str | None = None, max_tokens: int = 300, temperature: float = 0.3):
         self.model_id = model_id or self.DEFAULT_MODEL
         self.hf_token = hf_token or os.environ.get("HF_TOKEN")
+        self.max_tokens = max_tokens
+        self.temperature = temperature
         self._client: Any = None
         if self.hf_token and InferenceClient is not None:
             self._client = InferenceClient(token=self.hf_token)
@@ -76,8 +78,8 @@ class HFAgent:
             response = self._client.chat_completion(
                 model=self.model_id,
                 messages=messages,
-                max_tokens=300,
-                temperature=0.3,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
             )
             return response.choices[0].message.content.strip()
         except Exception as e:

@@ -8,7 +8,6 @@ social engineering attempts and complexity levels.
 from __future__ import annotations
 
 import json
-import itertools
 import random
 
 INTENTS = ["transfer", "check_balance", "block_card"]
@@ -118,7 +117,12 @@ def generate_personas(n: int = 100, seed: int = 42) -> list[dict]:
 
 
 def main():
-    personas = generate_personas(100)
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate customer personas")
+    parser.add_argument("-n", type=int, default=100, help="Number of personas to generate")
+    args = parser.parse_args()
+
+    personas = generate_personas(args.n)
     output_path = "personas/banking_personas.json"
     with open(output_path, "w") as f:
         json.dump(personas, f, indent=2)

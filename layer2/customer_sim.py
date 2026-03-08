@@ -68,8 +68,10 @@ class CustomerSimulator:
 
     MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
 
-    def __init__(self, hf_token: str | None = None):
+    def __init__(self, hf_token: str | None = None, max_tokens: int = 200, temperature: float = 0.7):
         self.hf_token = hf_token or os.environ.get("HF_TOKEN")
+        self.max_tokens = max_tokens
+        self.temperature = temperature
         self._client: Any = None
         if self.hf_token and InferenceClient is not None:
             self._client = InferenceClient(token=self.hf_token)
@@ -117,7 +119,7 @@ class CustomerSimulator:
         response = self._client.chat_completion(
             model=self.MODEL_ID,
             messages=messages,
-            max_tokens=200,
-            temperature=0.7,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
         )
         return response.choices[0].message.content.strip()

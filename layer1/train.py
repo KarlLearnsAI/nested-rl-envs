@@ -29,7 +29,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config_loader import load_config, make_grpo_config, make_env_config, get_report_config, get_paths
+from config_loader import load_config, make_grpo_config, make_env_config, get_report_config, get_paths, get_generation_config, get_personas_config
 from layer1.grpo_trainer import GRPOConfig, GRPOPromptTrainer, PromptEvaluator
 from layer1.training_logger import TrainingLogger, ReportGenerator
 from layer2.customer_sim import CustomerPersona, CustomerSimulator
@@ -40,7 +40,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s
 logger = logging.getLogger(__name__)
 
 
-def load_evaluator(hf_token: str | None = None) -> PromptEvaluator:
+def load_evaluator(
+    hf_token: str | None = None,
+    gen_cfg: dict | None = None,
+    personas_cfg: dict | None = None,
+) -> PromptEvaluator:
     """Load personas and create the evaluator with LLM agent."""
     token = hf_token or os.environ.get("HF_TOKEN")
     if not token:
@@ -48,11 +52,23 @@ def load_evaluator(hf_token: str | None = None) -> PromptEvaluator:
             "HF_TOKEN is required. Set it via --hf-token or the HF_TOKEN environment variable."
         )
 
-    personas_data = generate_personas(100)
-    personas = [CustomerPersona(**p) for p in personas_data]
-    simulator = CustomerSimulator(hf_token=token)
+    gen_cfg = gen_cfg or {}
+    personas_cfg = personas_cfg or {}
 
-    agent = HFAgent(hf_token=token)
+    persona_count = personas_cfg.get("count", 100)
+    personas_data = generate_personas(persona_count)
+    personas = [CustomerPersona(**p) for p in personas_data]
+    simulator = CustomerSimulator(
+        hf_token=token,
+        max_tokens=gen_cfg.get("customer_max_tokens", 200),
+        temperature=gen_cfg.get("customer_temperature", 0.7),
+    )
+
+    agent = HFAgent(
+        hf_token=token,
+        max_tokens=gen_cfg.get("agent_max_tokens", 300),
+        temperature=gen_cfg.get("agent_temperature", 0.3),
+    )
     if not agent.is_llm_available:
         raise RuntimeError(
             "LLM agent could not be initialized. Check your HF_TOKEN and huggingface_hub installation."
@@ -98,10 +114,10 @@ def _print_config_banner(config: GRPOConfig, report_cfg: dict, paths_cfg: dict):
     print(f"{'='*70}\n")
 
 
-def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: str | None):
+def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: str | None, gen_cfg: dict | None = None, personas_cfg: dict | None = None):
     """Run GRPO training."""
     _print_config_banner(config, report_cfg, paths_cfg)
-    evaluator = load_evaluator(hf_token)
+    evaluator = load_evaluator(hf_token, gen_cfg=gen_cfg, personas_cfg=personas_cfg)
     training_logger = TrainingLogger(
         log_dir=paths_cfg["log_dir"], total_steps=config.num_training_steps
     )
@@ -180,9 +196,6 @@ def main():
                         help="Override example customers in report from config")
     parser.add_argument("--output", type=str, default=None,
                         help="Save results to JSON file")
-    # Legacy flags (accepted for backwards compatibility with external runners)
-    parser.add_argument("--llm-agent", action="store_true", default=True,
-                        help="(deprecated, always true) Use LLM agent")
     args = parser.parse_args()
 
     # Load config from YAML
@@ -190,6 +203,8 @@ def main():
     grpo_config = make_grpo_config(cfg)
     report_cfg = get_report_config(cfg)
     paths_cfg = get_paths(cfg)
+    gen_cfg = get_generation_config(cfg)
+    personas_cfg = get_personas_config(cfg)
 
     # CLI overrides
     if args.steps is not None:
@@ -211,7 +226,7 @@ def main():
         report_cfg["example_customers"] = args.example_customers
 
     if args.mode == "train":
-        run_train(grpo_config, report_cfg, paths_cfg, args.hf_token)
+        run_train(grpo_config, report_cfg, paths_cfg, args.hf_token, gen_cfg=gen_cfg, personas_cfg=personas_cfg)
     elif args.mode == "eval":
         if not args.prompt:
             parser.error("--prompt is required for eval mode")

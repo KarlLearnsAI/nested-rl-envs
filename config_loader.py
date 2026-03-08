@@ -38,17 +38,21 @@ def make_grpo_config(cfg: dict[str, Any]):
     grpo = cfg.get("grpo", {})
     env = cfg.get("environment", {})
     paths = cfg.get("paths", {})
+    gen = cfg.get("generation", {})
 
     return GRPOConfig(
         model_name=grpo.get("model_name", "unsloth/Qwen2.5-3B-Instruct"),
         lora_r=grpo.get("lora_r", 16),
         lora_alpha=grpo.get("lora_alpha", 16),
         lora_dropout=grpo.get("lora_dropout", 0.0),
-        num_candidates=grpo.get("num_candidates", 4),
-        episodes_per_candidate=grpo.get("episodes_per_candidate", 7),
-        num_training_steps=grpo.get("num_training_steps", 10),
+        num_candidates=grpo.get("num_candidates", 2),
+        episodes_per_candidate=grpo.get("episodes_per_candidate", 3),
+        num_training_steps=grpo.get("num_training_steps", 5),
         learning_rate=grpo.get("learning_rate", 5e-5),
         max_prompt_length=grpo.get("max_prompt_length", 512),
+        max_seq_length=gen.get("max_seq_length", 2048),
+        prompt_max_new_tokens=gen.get("prompt_max_new_tokens", 512),
+        prompt_temperature=gen.get("prompt_temperature", 0.3),
         per_device_train_batch_size=grpo.get("per_device_train_batch_size", 1),
         gradient_accumulation_steps=grpo.get("gradient_accumulation_steps", 4),
         logging_steps=grpo.get("logging_steps", 1),
@@ -101,4 +105,26 @@ def get_paths(cfg: dict[str, Any]) -> dict[str, str]:
     return {
         "output_dir": paths.get("output_dir", "./grpo_output"),
         "log_dir": paths.get("log_dir", "./logs"),
+    }
+
+
+def get_generation_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Extract generation/inference settings from config."""
+    gen = cfg.get("generation", {})
+    return {
+        "max_seq_length": gen.get("max_seq_length", 2048),
+        "prompt_max_new_tokens": gen.get("prompt_max_new_tokens", 512),
+        "prompt_temperature": gen.get("prompt_temperature", 0.3),
+        "agent_max_tokens": gen.get("agent_max_tokens", 300),
+        "agent_temperature": gen.get("agent_temperature", 0.3),
+        "customer_max_tokens": gen.get("customer_max_tokens", 200),
+        "customer_temperature": gen.get("customer_temperature", 0.7),
+    }
+
+
+def get_personas_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Extract persona settings from config."""
+    personas = cfg.get("personas", {})
+    return {
+        "count": personas.get("count", 100),
     }
