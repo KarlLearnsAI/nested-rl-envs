@@ -1,9 +1,11 @@
 """
-Supabase uploader for training results.
+Supabase uploader for training results — incremental mode.
 
-Uploads:
-  1. Raw summary JSON + report files to Supabase Storage
-  2. Per-run and per-episode metrics to Postgres tables
+Uploads after every training step so data is never lost if the job crashes.
+
+- Creates a training_runs row at the start of training
+- Upserts that row after each step with updated reward arrays
+- Inserts per-episode rows after each step
 
 Requires SUPABASE_URL and SUPABASE_KEY environment variables.
 """
@@ -38,163 +40,172 @@ def _get_client():
     return create_client(url, key)
 
 
-def upload_training_results(
-    raw_summary: dict[str, Any],
-    run_id: str | None = None,
-    bucket: str = "training-results",
-    report_path: str | None = None,
-    chart_path: str | None = None,
-    config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+class SupabaseUploader:
     """
-    Upload training results to Supabase (Storage + DB).
+    Incremental uploader — call after_step() after each training step.
 
-    Args:
-        raw_summary: Output of TrainingLogger.generate_raw_summary().
-        run_id: Unique run identifier. Auto-generated if not provided.
-        bucket: Supabase Storage bucket name.
-        report_path: Path to the markdown report file (optional).
-        chart_path: Path to the reward chart PNG (optional).
-        config: Training config dict to store with the run (optional).
-
-    Returns:
-        Dict with upload results: {"run_id", "storage_paths", "db_rows"}.
+    Creates the training_runs row on first call, then upserts it with
+    updated arrays on every subsequent call. Episode rows are inserted
+    immediately and never re-sent.
     """
-    client = _get_client()
-    if client is None:
-        logger.warning("Supabase upload skipped — client not available")
-        return {"run_id": None, "storage_paths": [], "db_rows": 0, "error": "no client"}
 
-    if run_id is None:
-        run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    def __init__(
+        self,
+        run_id: str,
+        bucket: str = "training-results",
+        config: dict[str, Any] | None = None,
+    ):
+        self.run_id = run_id
+        self.bucket = bucket
+        self.config = config
+        self._client = _get_client()
+        self._run_created = False
 
-    results: dict[str, Any] = {"run_id": run_id, "storage_paths": [], "db_rows": 0}
+        # Accumulated arrays (mirrors what training_runs stores)
+        self._mean_rewards: list[float] = []
+        self._min_rewards: list[float] = []
+        self._max_rewards: list[float] = []
+        self._total_episodes = 0
+        self._started_at = datetime.now(timezone.utc).isoformat()
 
-    # --- Storage uploads ---
-    results["storage_paths"] = _upload_files(
-        client, bucket, run_id, raw_summary, report_path, chart_path
-    )
+        if self._client:
+            logger.info("SupabaseUploader ready: run_id=%s", run_id)
+        else:
+            logger.warning("SupabaseUploader: no client — uploads will be skipped")
 
-    # --- DB inserts ---
-    results["db_rows"] = _insert_metrics(client, run_id, raw_summary, config)
+    @property
+    def enabled(self) -> bool:
+        return self._client is not None
 
-    logger.info(
-        "Supabase upload complete: run_id=%s, files=%d, db_rows=%d",
-        run_id, len(results["storage_paths"]), results["db_rows"],
-    )
-    return results
+    def after_step(self, step: int, eval_result: dict[str, Any], prompt: str):
+        """
+        Called after each training step/candidate evaluation.
 
+        Upserts the training_runs row and inserts new episode rows.
+        """
+        if not self._client:
+            return
 
-def _upload_files(
-    client,
-    bucket: str,
-    run_id: str,
-    raw_summary: dict[str, Any],
-    report_path: str | None,
-    chart_path: str | None,
-) -> list[str]:
-    """Upload files to Supabase Storage."""
-    uploaded = []
+        mean_reward = eval_result.get("mean_reward", 0.0)
+        min_reward = eval_result.get("min_reward", 0.0)
+        max_reward = eval_result.get("max_reward", 0.0)
 
-    # Upload raw summary JSON
-    try:
-        summary_bytes = json.dumps(raw_summary, indent=2, default=str).encode()
-        path = f"{run_id}/raw_summary.json"
-        client.storage.from_(bucket).upload(
-            path, summary_bytes, {"content-type": "application/json"}
-        )
-        uploaded.append(path)
-        logger.info("Uploaded %s to storage", path)
-    except Exception as e:
-        logger.error("Failed to upload raw_summary.json: %s", e)
+        self._mean_rewards.append(mean_reward)
+        self._min_rewards.append(min_reward)
+        self._max_rewards.append(max_reward)
 
-    # Upload report markdown
-    if report_path and os.path.exists(report_path):
-        try:
-            with open(report_path, "rb") as f:
-                path = f"{run_id}/report.md"
-                client.storage.from_(bucket).upload(
-                    path, f.read(), {"content-type": "text/markdown"}
-                )
-                uploaded.append(path)
-                logger.info("Uploaded %s to storage", path)
-        except Exception as e:
-            logger.error("Failed to upload report: %s", e)
+        num_episodes = eval_result.get("num_episodes", 0)
+        self._total_episodes += num_episodes
 
-    # Upload chart PNG
-    if chart_path and os.path.exists(chart_path):
-        try:
-            with open(chart_path, "rb") as f:
-                path = f"{run_id}/reward_chart.png"
-                client.storage.from_(bucket).upload(
-                    path, f.read(), {"content-type": "image/png"}
-                )
-                uploaded.append(path)
-                logger.info("Uploaded %s to storage", path)
-        except Exception as e:
-            logger.error("Failed to upload chart: %s", e)
+        # Best so far
+        best_mean = max(self._mean_rewards)
+        best_idx = self._mean_rewards.index(best_mean)
 
-    return uploaded
-
-
-def _insert_metrics(
-    client,
-    run_id: str,
-    raw_summary: dict[str, Any],
-    config: dict[str, Any] | None,
-) -> int:
-    """Insert training run + per-episode metrics into Postgres tables."""
-    rows_inserted = 0
-
-    # Insert training run summary
-    try:
+        # --- Upsert training_runs row ---
         run_row = {
-            "run_id": run_id,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "duration_seconds": raw_summary.get("duration_seconds"),
-            "total_steps": len(raw_summary.get("steps", [])),
-            "total_episodes": raw_summary.get("total_episodes", 0),
-            "best_step": raw_summary.get("best_step"),
-            "best_mean_reward": raw_summary.get("best_mean_reward"),
-            "mean_rewards": raw_summary.get("mean_rewards", []),
-            "min_rewards": raw_summary.get("min_rewards", []),
-            "max_rewards": raw_summary.get("max_rewards", []),
-            "config": config,
+            "run_id": self.run_id,
+            "started_at": self._started_at,
+            "duration_seconds": None,  # updated at end
+            "total_steps": len(self._mean_rewards),
+            "total_episodes": self._total_episodes,
+            "best_step": best_idx,
+            "best_mean_reward": best_mean,
+            "mean_rewards": self._mean_rewards,
+            "min_rewards": self._min_rewards,
+            "max_rewards": self._max_rewards,
+            "config": self.config,
         }
-        client.table("training_runs").insert(run_row).execute()
-        rows_inserted += 1
-        logger.info("Inserted training run: %s", run_id)
-    except Exception as e:
-        logger.error("Failed to insert training_runs row: %s", e)
 
-    # Insert per-episode metrics in batches
-    episode_rows = []
-    for m in raw_summary.get("per_episode_metrics", []):
-        episode_rows.append({
-            "run_id": run_id,
-            "step": m["step"],
-            "episode": m["episode"],
-            "reward": m.get("reward"),
-            "turns": m.get("turns", 0),
-            "intent_captured": m.get("intent_captured", False),
-            "intent_correct": m.get("intent_correct", False),
-            "true_intent": m.get("true_intent", ""),
-            "agent_intent": m.get("agent_intent", ""),
-            "injection_attempted": m.get("injection_attempted", False),
-            "injection_succeeded": m.get("injection_succeeded", False),
-            "api_call_made": m.get("api_call_made", False),
-            "api_call_correct": m.get("api_call_correct", False),
-        })
+        try:
+            self._client.table("training_runs").upsert(
+                run_row, on_conflict="run_id"
+            ).execute()
+            self._run_created = True
+            logger.info(
+                "Upserted training_runs: step=%d mean_reward=%.1f",
+                step, mean_reward,
+            )
+        except Exception as e:
+            logger.error("Failed to upsert training_runs: %s", e)
 
-    # Batch insert (Supabase/PostgREST supports bulk inserts)
-    if episode_rows:
-        batch_size = 100
-        for i in range(0, len(episode_rows), batch_size):
-            batch = episode_rows[i : i + batch_size]
+        # --- Insert episode rows for this step ---
+        episode_rows = []
+        rewards_list = eval_result.get("rewards", [])
+        for ei, log in enumerate(eval_result.get("logs", [])):
+            episode_rows.append({
+                "run_id": self.run_id,
+                "step": step,
+                "episode": ei,
+                "reward": rewards_list[ei] if ei < len(rewards_list) else None,
+                "turns": log.get("turns", 0),
+                "intent_captured": log.get("intent_captured", False),
+                "intent_correct": log.get("intent_correct", False),
+                "true_intent": log.get("true_intent", ""),
+                "agent_intent": log.get("agent_intent", ""),
+                "injection_attempted": log.get("injection_attempted", False),
+                "injection_succeeded": log.get("injection_succeeded", False),
+                "api_call_made": log.get("api_call_made", False),
+                "api_call_correct": log.get("api_call_correct", False),
+            })
+
+        if episode_rows:
             try:
-                client.table("training_episodes").insert(batch).execute()
-                rows_inserted += len(batch)
+                self._client.table("training_episodes").insert(episode_rows).execute()
+                logger.info(
+                    "Inserted %d episode rows for step %d", len(episode_rows), step
+                )
             except Exception as e:
-                logger.error("Failed to insert episode batch %d: %s", i, e)
+                logger.error("Failed to insert episodes for step %d: %s", step, e)
 
-    return rows_inserted
+    def finish(
+        self,
+        duration_seconds: float | None = None,
+        report_path: str | None = None,
+        chart_path: str | None = None,
+        raw_summary: dict[str, Any] | None = None,
+    ):
+        """
+        Called at end of training. Updates duration and uploads final files.
+        """
+        if not self._client:
+            return
+
+        # Update duration on the run row
+        if duration_seconds is not None and self._run_created:
+            try:
+                self._client.table("training_runs").update(
+                    {"duration_seconds": duration_seconds}
+                ).eq("run_id", self.run_id).execute()
+                logger.info("Updated duration: %.1fs", duration_seconds)
+            except Exception as e:
+                logger.error("Failed to update duration: %s", e)
+
+        # Upload files to Storage
+        if raw_summary:
+            self._upload_file(
+                f"{self.run_id}/raw_summary.json",
+                json.dumps(raw_summary, indent=2, default=str).encode(),
+                "application/json",
+            )
+
+        if report_path and os.path.exists(report_path):
+            with open(report_path, "rb") as f:
+                self._upload_file(
+                    f"{self.run_id}/report.md", f.read(), "text/markdown"
+                )
+
+        if chart_path and os.path.exists(chart_path):
+            with open(chart_path, "rb") as f:
+                self._upload_file(
+                    f"{self.run_id}/reward_chart.png", f.read(), "image/png"
+                )
+
+    def _upload_file(self, path: str, data: bytes, content_type: str):
+        """Upload a single file to Supabase Storage."""
+        try:
+            self._client.storage.from_(self.bucket).upload(
+                path, data, {"content-type": content_type}
+            )
+            logger.info("Uploaded %s to storage", path)
+        except Exception as e:
+            logger.error("Failed to upload %s: %s", path, e)

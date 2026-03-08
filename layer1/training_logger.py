@@ -32,12 +32,17 @@ class TrainingLogger:
         self.total_steps = total_steps
         self.iterations: list[dict[str, Any]] = []
         self._start_time = datetime.now()
+        self._on_step_callbacks: list[Any] = []
 
         with open(self.log_path, "w") as f:
             f.write(f"Training Log — {self._start_time.isoformat()}\n")
             f.write(f"{'=' * 60}\n\n")
             f.flush()
             os.fsync(f.fileno())
+
+    def add_on_step_callback(self, callback):
+        """Register a callback called after each step: callback(step, eval_result, prompt)."""
+        self._on_step_callbacks.append(callback)
 
     def log_iteration(self, step: int, prompt: str, eval_result: dict[str, Any]):
         """Log a single training iteration (one prompt evaluated)."""
@@ -68,6 +73,13 @@ class TrainingLogger:
         self.save_json()
 
         logger.info("Logged step %d: mean_reward=%.1f", step, entry["mean_reward"])
+
+        # Notify callbacks (e.g. Supabase uploader)
+        for cb in self._on_step_callbacks:
+            try:
+                cb(step, eval_result, prompt)
+            except Exception as e:
+                logger.error("Step callback failed: %s", e)
 
     def save_json(self):
         """Save structured training data to JSON."""

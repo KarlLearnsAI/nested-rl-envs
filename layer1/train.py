@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config_loader import load_config, make_grpo_config, make_env_config, get_report_config, get_paths, get_generation_config, get_personas_config, get_upload_config
 from layer1.grpo_trainer import GRPOConfig, GRPOPromptTrainer, PromptEvaluator
 from layer1.training_logger import TrainingLogger, ReportGenerator
-from layer1.upload import upload_training_results
+from layer1.upload import SupabaseUploader
 from layer2.customer_sim import CustomerPersona, CustomerSimulator
 from layer2.hf_agent import HFAgent
 from personas.generate_personas import generate_personas
@@ -153,6 +153,24 @@ def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: s
     training_logger = TrainingLogger(
         log_dir=paths_cfg["log_dir"], total_steps=config.num_training_steps
     )
+
+    # Wire up incremental Supabase uploads
+    upload_cfg = upload_cfg or {}
+    uploader = None
+    if upload_cfg.get("enabled") and os.environ.get("SUPABASE_URL"):
+        uploader = SupabaseUploader(
+            run_id=training_logger.timestamp,
+            bucket=upload_cfg.get("bucket", "training-results"),
+            config={"grpo": config.__dict__, "report": report_cfg, "paths": paths_cfg},
+        )
+        if uploader.enabled:
+            training_logger.add_on_step_callback(uploader.after_step)
+            print("Supabase incremental upload enabled")
+        else:
+            uploader = None
+    elif upload_cfg.get("enabled"):
+        print("Supabase upload enabled but SUPABASE_URL not set — skipping")
+
     trainer = GRPOPromptTrainer(config=config, evaluator=evaluator, logger=training_logger)
     trainer.setup_model()
     trainer.train()
@@ -214,28 +232,20 @@ def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: s
         except OSError:
             print("WARNING: Could not re-read report from disk")
 
-    # Upload to Supabase if configured
-    upload_cfg = upload_cfg or {}
-    if upload_cfg.get("enabled") and os.environ.get("SUPABASE_URL"):
+    # Finalize Supabase upload (update duration, upload files)
+    if uploader and uploader.enabled:
         print(f"\n{'='*60}")
-        print("UPLOADING TO SUPABASE...")
+        print("FINALIZING SUPABASE UPLOAD...")
         print(f"{'='*60}")
-        upload_result = upload_training_results(
+        uploader.finish(
+            duration_seconds=raw_summary.get("duration_seconds"),
+            report_path=report_path,
             raw_summary=raw_summary,
-            run_id=training_logger.timestamp,
-            bucket=upload_cfg.get("bucket", "training-results"),
-            report_path=report_path if report_cfg["enabled"] else None,
-            chart_path=None,  # chart path is internal to ReportGenerator
-            config={"grpo": config.__dict__, "report": report_cfg, "paths": paths_cfg},
         )
-        print(f"  Run ID:  {upload_result['run_id']}")
-        print(f"  Files:   {len(upload_result['storage_paths'])} uploaded")
-        print(f"  DB rows: {upload_result['db_rows']}")
-        if upload_result.get("error"):
-            print(f"  Error:   {upload_result['error']}")
+        print(f"  Run ID:  {uploader.run_id}")
+        print(f"  Steps uploaded incrementally: {len(uploader._mean_rewards)}")
+        print(f"  Episodes uploaded: {uploader._total_episodes}")
         print(f"{'='*60}")
-    elif upload_cfg.get("enabled"):
-        print("\nSupabase upload enabled but SUPABASE_URL not set — skipping")
 
 
 def run_eval(hf_token: str | None, prompt: str, episodes: int):

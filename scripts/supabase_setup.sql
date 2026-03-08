@@ -49,9 +49,11 @@ create index if not exists idx_episodes_step on training_episodes(run_id, step);
 alter table training_runs enable row level security;
 alter table training_episodes enable row level security;
 
--- Allow inserts with service key (anon or service_role)
+-- Allow inserts, updates, and selects with service key (anon or service_role)
 create policy "Allow insert training_runs" on training_runs
     for insert with check (true);
+create policy "Allow update training_runs" on training_runs
+    for update using (true);
 create policy "Allow select training_runs" on training_runs
     for select using (true);
 
