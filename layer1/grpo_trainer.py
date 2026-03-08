@@ -85,8 +85,8 @@ class PromptEvaluator:
         self,
         personas: list[CustomerPersona],
         simulator: CustomerSimulator,
+        agent_fn: Callable,
         env_config: EnvConfig | None = None,
-        agent_fn: Callable | None = None,
     ):
         self.env = ConversationEnvironment(
             personas=personas,

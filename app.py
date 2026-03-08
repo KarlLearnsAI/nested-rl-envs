@@ -24,13 +24,16 @@ except ImportError:
 from layer0.reward import reward_fn, RewardConfig, BANKING_INTENTS
 from layer2.customer_sim import CustomerPersona, CustomerSimulator
 from layer2.environment import ConversationEnvironment, EnvConfig
+from layer2.hf_agent import HFAgent
 from personas.generate_personas import generate_personas
 
 
 # ── Load personas ──
 PERSONAS_DATA = generate_personas(100)
 PERSONAS = [CustomerPersona(**p) for p in PERSONAS_DATA]
-SIMULATOR = CustomerSimulator(hf_token=os.environ.get("HF_TOKEN"))
+HF_TOKEN = os.environ.get("HF_TOKEN")
+SIMULATOR = CustomerSimulator(hf_token=HF_TOKEN)
+AGENT = HFAgent(hf_token=HF_TOKEN)
 ENV = ConversationEnvironment(personas=PERSONAS, simulator=SIMULATOR)
 
 BASE_PROMPT = "You are a helpful customer support agent for a bank."
@@ -59,7 +62,7 @@ def run_single_episode(persona_id: int, system_prompt: str) -> str:
         return "Invalid persona ID. Choose 0-99."
 
     persona = PERSONAS[persona_id]
-    log = ENV.run_episode(system_prompt=system_prompt, persona=persona)
+    log = ENV.run_episode(system_prompt=system_prompt, agent_fn=AGENT, persona=persona)
     r = reward_fn(log)
 
     output = f"**Persona:** {persona.personality} customer, intent={persona.true_intent}\n"
@@ -92,7 +95,7 @@ def run_ab_test_demo(num_episodes: int) -> str:
         inj_total = 0
 
         for persona in test_personas:
-            log = ENV.run_episode(system_prompt=prompt, persona=persona)
+            log = ENV.run_episode(system_prompt=prompt, agent_fn=AGENT, persona=persona)
             r = reward_fn(log)
             rewards.append(r)
             turns_list.append(log.turns)

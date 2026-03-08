@@ -8,7 +8,7 @@ optimized — this module provides the inference-time agent for A/B testing.
 
 from __future__ import annotations
 
-import json
+import logging
 import os
 from typing import Any
 
@@ -16,6 +16,8 @@ try:
     from huggingface_hub import InferenceClient
 except ImportError:
     InferenceClient = None  # type: ignore
+
+logger = logging.getLogger(__name__)
 
 
 class HFAgent:
@@ -49,9 +51,13 @@ class HFAgent:
         Generate an agent response.
 
         Compatible with ConversationEnvironment.run_episode(agent_fn=...).
+        Requires a valid HF token and working Inference API connection.
         """
         if self._client is None:
-            return self._fallback_response(system_prompt, observation)
+            raise RuntimeError(
+                "HF Inference API client is not available. "
+                "Set HF_TOKEN environment variable with a valid HuggingFace token."
+            )
 
         messages = [{"role": "system", "content": system_prompt}]
 
@@ -76,32 +82,8 @@ class HFAgent:
             return response.choices[0].message.content.strip()
         except Exception as e:
             if "402" in str(e) or "Payment Required" in str(e):
-                import logging
-                logging.getLogger(__name__).warning(
-                    "HF API credits depleted, falling back to rule-based. "
+                raise RuntimeError(
+                    "HF API credits depleted. "
                     "Get more credits at https://huggingface.co/settings/billing"
-                )
-                self._client = None
-                return self._fallback_response(system_prompt, observation)
+                ) from e
             raise
-
-    def _fallback_response(self, system_prompt: str, observation: dict[str, Any]) -> str:
-        """Rule-based fallback when no HF token is available."""
-        customer_msg = observation.get("customer_message", "").lower()
-        intents = observation.get("intents", [])
-
-        keywords = {
-            "transfer": ["transfer", "send", "move", "wire", "pay"],
-            "check_balance": ["balance", "how much", "check", "amount", "funds"],
-            "block_card": ["block", "lost", "stolen", "freeze", "disable", "card"],
-        }
-
-        for intent in intents:
-            if any(kw in customer_msg for kw in keywords.get(intent, [])):
-                return json.dumps({"intent": intent})
-
-        turn = observation.get("turn", 0)
-        if turn >= 2:
-            return json.dumps({"intent": intents[0] if intents else "unknown"})
-
-        return "Could you please describe what you need help with today?"
