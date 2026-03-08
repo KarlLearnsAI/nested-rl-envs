@@ -20,6 +20,10 @@ import logging
 import sys
 import os
 
+# Auto-load .env for HF_TOKEN
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from layer1.grpo_trainer import (
@@ -30,23 +34,35 @@ from layer1.grpo_trainer import (
     build_meta_prompt,
 )
 from layer2.customer_sim import CustomerPersona, CustomerSimulator
+from layer2.hf_agent import HFAgent
 from personas.generate_personas import generate_personas
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def load_evaluator(hf_token: str | None = None) -> PromptEvaluator:
-    """Load personas and create the evaluator."""
+def load_evaluator(hf_token: str | None = None, use_llm_agent: bool = False) -> PromptEvaluator:
+    """Load personas and create the evaluator with optional LLM agent."""
+    token = hf_token or os.environ.get("HF_TOKEN")
     personas_data = generate_personas(100)
     personas = [CustomerPersona(**p) for p in personas_data]
-    simulator = CustomerSimulator(hf_token=hf_token)
-    return PromptEvaluator(personas=personas, simulator=simulator)
+    simulator = CustomerSimulator(hf_token=token)
+
+    agent_fn = None
+    if use_llm_agent and token:
+        agent = HFAgent(hf_token=token)
+        if agent.is_llm_available:
+            agent_fn = agent
+            logger.info("Using LLM agent (Llama 3.1 8B)")
+        else:
+            logger.warning("LLM agent not available, using rule-based fallback")
+
+    return PromptEvaluator(personas=personas, simulator=simulator, agent_fn=agent_fn)
 
 
 def run_mock(args):
     """Run mock optimization with hand-written prompts."""
-    evaluator = load_evaluator(args.hf_token)
+    evaluator = load_evaluator(args.hf_token, use_llm_agent=args.llm_agent)
     optimizer = MockPromptOptimizer(evaluator)
     result = optimizer.optimize(num_episodes_per_prompt=args.episodes)
 
@@ -66,7 +82,7 @@ def run_mock(args):
 
 def run_train(args):
     """Run full GRPO training (requires GPU)."""
-    evaluator = load_evaluator(args.hf_token)
+    evaluator = load_evaluator(args.hf_token, use_llm_agent=args.llm_agent)
     config = GRPOConfig(
         num_training_steps=args.steps,
         episodes_per_candidate=args.episodes,
@@ -89,7 +105,7 @@ def run_train(args):
 
 def run_eval(args):
     """Evaluate a single prompt."""
-    evaluator = load_evaluator(args.hf_token)
+    evaluator = load_evaluator(args.hf_token, use_llm_agent=args.llm_agent)
     result = evaluator.evaluate_prompt(args.prompt, num_episodes=args.episodes)
     print(f"Prompt: {args.prompt[:80]}...")
     print(f"Mean reward: {result['mean_reward']:.1f}")
@@ -118,6 +134,8 @@ def main():
     parser.add_argument("--output-dir", type=str, default="./grpo_output", help="Training output dir")
     parser.add_argument("--hf-token", type=str, default=None, help="HuggingFace API token")
     parser.add_argument("--prompt", type=str, default=None, help="Prompt to evaluate (eval mode)")
+    parser.add_argument("--llm-agent", action="store_true",
+                        help="Use LLM (Llama 3.1) as the agent instead of rule-based")
     args = parser.parse_args()
 
     if args.mode == "train":

@@ -80,7 +80,18 @@ class CustomerSimulator:
     ) -> str:
         """Generate the next customer reply given the conversation so far."""
         if self._client is not None:
-            return self._generate_llm_reply(persona, conversation_history, agent_message)
+            try:
+                return self._generate_llm_reply(persona, conversation_history, agent_message)
+            except Exception as e:
+                if "402" in str(e) or "Payment Required" in str(e):
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "HF API credits depleted, falling back to rule-based. "
+                        "Get more credits at https://huggingface.co/settings/billing"
+                    )
+                    self._client = None  # disable for remaining calls
+                else:
+                    raise
         return self._generate_rule_reply(persona, conversation_history, agent_message)
 
     def _generate_llm_reply(
