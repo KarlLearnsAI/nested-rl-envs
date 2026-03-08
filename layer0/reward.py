@@ -78,6 +78,7 @@ class ConversationLog:
             "customer_persona": self.customer_persona,
             "true_intent": self.true_intent,
             "agent_intent": self.agent_intent,
+            "messages": self.messages,
         }
 
 
