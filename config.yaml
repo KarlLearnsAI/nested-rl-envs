@@ -88,7 +88,7 @@ reward:
 
 report:
   enabled: true
-  output_dir: "./reports"
+  output_dir: "/workspace/output/reports"
   eval_episodes: 5                # Episodes per checkpoint evaluation
   example_customers: 3            # Example conversations in report
 
@@ -96,5 +96,5 @@ report:
 # --- Paths ---
 
 paths:
-  output_dir: "./grpo_output"
-  log_dir: "./logs"
+  output_dir: "/workspace/output/grpo_output"
+  log_dir: "/workspace/output/logs"
