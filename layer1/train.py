@@ -33,6 +33,7 @@ from layer1.grpo_trainer import (
     PromptEvaluator,
     build_meta_prompt,
 )
+from layer1.training_logger import TrainingLogger, ReportGenerator
 from layer2.customer_sim import CustomerPersona, CustomerSimulator
 from layer2.hf_agent import HFAgent
 from personas.generate_personas import generate_personas
@@ -63,7 +64,11 @@ def load_evaluator(hf_token: str | None = None, use_llm_agent: bool = False) -> 
 def run_mock(args):
     """Run mock optimization with hand-written prompts."""
     evaluator = load_evaluator(args.hf_token, use_llm_agent=args.llm_agent)
-    optimizer = MockPromptOptimizer(evaluator)
+    training_logger = TrainingLogger(
+        log_dir=args.log_dir,
+        total_steps=len(MockPromptOptimizer.CANDIDATE_PROMPTS),
+    )
+    optimizer = MockPromptOptimizer(evaluator, logger=training_logger)
     result = optimizer.optimize(num_episodes_per_prompt=args.episodes)
 
     print(f"\n{'='*60}")
@@ -79,16 +84,29 @@ def run_mock(args):
             json.dump(result, f, indent=2, default=str)
         print(f"\nResults saved to {args.output}")
 
+    if args.report:
+        print(f"\n{'='*60}")
+        print("GENERATING TRAINING REPORT...")
+        print(f"{'='*60}")
+        report_gen = ReportGenerator(evaluator, training_logger)
+        report_path = report_gen.generate_report(
+            output_dir=args.report_dir,
+            num_eval_episodes=args.eval_episodes,
+            num_example_customers=args.example_customers,
+        )
+        print(f"\nReport saved to {report_path}")
+
 
 def run_train(args):
     """Run full GRPO training (requires GPU)."""
     evaluator = load_evaluator(args.hf_token, use_llm_agent=args.llm_agent)
+    training_logger = TrainingLogger(log_dir=args.log_dir, total_steps=args.steps)
     config = GRPOConfig(
         num_training_steps=args.steps,
         episodes_per_candidate=args.episodes,
         output_dir=args.output_dir,
     )
-    trainer = GRPOPromptTrainer(config=config, evaluator=evaluator)
+    trainer = GRPOPromptTrainer(config=config, evaluator=evaluator, logger=training_logger)
     trainer.setup_model()
     trainer.train()
 
@@ -101,6 +119,18 @@ def run_train(args):
     # Evaluate the trained prompt
     result = evaluator.evaluate_prompt(best_prompt, num_episodes=50)
     print(f"\nEvaluation: mean_reward={result['mean_reward']:.1f}")
+
+    if args.report:
+        print(f"\n{'='*60}")
+        print("GENERATING TRAINING REPORT...")
+        print(f"{'='*60}")
+        report_gen = ReportGenerator(evaluator, training_logger)
+        report_path = report_gen.generate_report(
+            output_dir=args.report_dir,
+            num_eval_episodes=args.eval_episodes,
+            num_example_customers=args.example_customers,
+        )
+        print(f"\nReport saved to {report_path}")
 
 
 def run_eval(args):
@@ -136,6 +166,18 @@ def main():
     parser.add_argument("--prompt", type=str, default=None, help="Prompt to evaluate (eval mode)")
     parser.add_argument("--llm-agent", action="store_true",
                         help="Use LLM (Llama 3.1) as the agent instead of rule-based")
+    parser.add_argument("--report", action="store_true", default=True,
+                        help="Generate training report after completion (default: True)")
+    parser.add_argument("--no-report", action="store_false", dest="report",
+                        help="Skip report generation")
+    parser.add_argument("--report-dir", type=str, default="./reports",
+                        help="Directory for report output")
+    parser.add_argument("--log-dir", type=str, default="./logs",
+                        help="Directory for training logs")
+    parser.add_argument("--eval-episodes", type=int, default=30,
+                        help="Episodes per checkpoint for report evaluation")
+    parser.add_argument("--example-customers", type=int, default=10,
+                        help="Number of example customers in report")
     args = parser.parse_args()
 
     if args.mode == "train":
