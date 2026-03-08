@@ -31,7 +31,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config_loader import load_config, make_grpo_config, make_env_config, get_report_config, get_paths, get_generation_config, get_personas_config, get_upload_config
-from layer1.grpo_trainer import GRPOConfig, GRPOPromptTrainer, PromptEvaluator
+from layer1.grpo_trainer import GRPOConfig, GRPOPromptTrainer, PromptEvaluator, SFT_SEED_PROMPTS
 from layer1.training_logger import TrainingLogger, ReportGenerator
 from layer1.upload import SupabaseUploader
 from layer2.customer_sim import CustomerPersona, CustomerSimulator
@@ -211,6 +211,17 @@ def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: s
 
     trainer = GRPOPromptTrainer(config=config, evaluator=evaluator, logger=training_logger)
     trainer.setup_model()
+
+    # SFT warm start: prime the model on hand-crafted seed prompts before GRPO
+    if config.sft_warm_start:
+        print(f"\n{'='*60}")
+        print("SFT WARM START")
+        print(f"{'='*60}")
+        print(f"  Seed prompts: {len(SFT_SEED_PROMPTS)}")
+        print(f"  Epochs: {config.sft_epochs}  |  LR: {config.sft_lr:.1e}")
+        print(f"{'='*60}\n")
+        trainer.sft_warm_start(num_epochs=config.sft_epochs, sft_lr=config.sft_lr)
+
     trainer.train()
 
     best_prompt = trainer.generate_best_prompt()
