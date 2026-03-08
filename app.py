@@ -71,19 +71,19 @@ def create_reward_chart():
     fig.tight_layout(pad=1.5)
     return fig
 # ── Build the Gradio app ──
+_theme = gr.themes.Base(
+    primary_hue="cyan",
+    neutral_hue="slate",
+)
+_css = """
+    .gradio-container { background: #0a0e17 !important; }
+    .main-header { text-align: center; margin-bottom: 8px; }
+    .main-header h1 { color: #e2e8f0; font-family: monospace; }
+    .main-header p { color: #64748b; font-family: monospace; font-size: 14px; }
+    .section-label { color: #94a3b8 !important; font-family: monospace !important; }
+"""
 with gr.Blocks(
     title="Nested RL Environments — AI Oversight",
-    theme=gr.themes.Base(
-        primary_hue="cyan",
-        neutral_hue="slate",
-    ),
-    css="""
-        .gradio-container { background: #0a0e17 !important; }
-        .main-header { text-align: center; margin-bottom: 8px; }
-        .main-header h1 { color: #e2e8f0; font-family: monospace; }
-        .main-header p { color: #64748b; font-family: monospace; font-size: 14px; }
-        .section-label { color: #94a3b8 !important; font-family: monospace !important; }
-    """,
 ) as demo:
     # Header
     gr.HTML("""
@@ -100,7 +100,6 @@ with gr.Blocks(
                 value="assets/architecture.png",
                 label="3-Layer Architecture",
                 show_label=False,
-                show_download_button=False,
             )
             gr.Markdown("""
 ---
@@ -124,4 +123,4 @@ with gr.Blocks(
                 """,
             )
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_name="0.0.0.0", server_port=7860, theme=_theme, css=_css)
