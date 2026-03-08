@@ -2,6 +2,9 @@
 requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["layer0*", "layer1*", "layer2*", "personas*"]
+
 [project]
 name = "nested-rl-envs"
 version = "0.1.0"
