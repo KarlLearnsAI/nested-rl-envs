@@ -234,8 +234,17 @@ class ReportGenerator:
         output_dir: str = "./reports",
         num_eval_episodes: int = 30,
         num_example_customers: int = 10,
-    ) -> str:
-        """Generate the full training report. Returns path to the markdown report."""
+    ) -> dict[str, Any]:
+        """
+        Generate the full training report.
+
+        Returns a dict with:
+          - report_path: path to the markdown report
+          - chart_path: path to the reward chart image
+          - checkpoint_prompts: list of {step, label, prompt, mean_reward}
+          - checkpoint_conversations: list of {persona_id, true_intent, personality,
+              social_engineering, conversations: [{step, label, prompt, reward, turns, ...}]}
+        """
         os.makedirs(output_dir, exist_ok=True)
         ts = self.logger.timestamp
 
@@ -292,7 +301,24 @@ class ReportGenerator:
         self.logger.save_json()
 
         logger.info("Report generated: %s", report_path)
-        return report_path
+
+        # Build structured checkpoint data for Supabase upload
+        checkpoint_prompts_data = [
+            {
+                "step": cp["step"],
+                "label": checkpoint_labels[i],
+                "prompt": cp["prompt"],
+                "mean_reward": cp["mean_reward"],
+            }
+            for i, cp in enumerate(checkpoints)
+        ]
+
+        return {
+            "report_path": report_path,
+            "chart_path": chart_path,
+            "checkpoint_prompts": checkpoint_prompts_data,
+            "checkpoint_conversations": example_conversations,
+        }
 
     def _make_labels(self, indices: list[int]) -> list[str]:
         labels = []
@@ -384,7 +410,9 @@ class ReportGenerator:
                 )
                 r = reward_fn(log)
                 customer_data["conversations"].append({
+                    "step": cp["step"],
                     "label": checkpoint_labels[ci],
+                    "prompt": cp["prompt"],
                     "reward": r,
                     "turns": log.turns,
                     "intent_correct": log.intent_correct,

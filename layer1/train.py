@@ -257,16 +257,18 @@ def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: s
     print(f"{'='*60}")
 
     report_path = None
+    report_result = None
     if report_cfg["enabled"]:
         print(f"\n{'='*60}")
         print("GENERATING TRAINING REPORT...")
         print(f"{'='*60}")
         report_gen = ReportGenerator(evaluator, training_logger)
-        report_path = report_gen.generate_report(
+        report_result = report_gen.generate_report(
             output_dir=report_cfg["output_dir"],
             num_eval_episodes=report_cfg["eval_episodes"],
             num_example_customers=report_cfg["example_customers"],
         )
+        report_path = report_result["report_path"]
         print(f"\nReport saved to {report_path}")
 
         # Print report to stdout as fallback (always visible in logs)
@@ -286,9 +288,20 @@ def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: s
         print(f"\n{'='*60}")
         print("FINALIZING SUPABASE UPLOAD...")
         print(f"{'='*60}")
+
+        # Upload checkpoint comparison data (prompts + conversations)
+        if report_result:
+            uploader.upload_checkpoint_comparisons(
+                checkpoint_prompts=report_result["checkpoint_prompts"],
+                checkpoint_conversations=report_result["checkpoint_conversations"],
+            )
+            print(f"  Checkpoint prompts uploaded: {len(report_result['checkpoint_prompts'])}")
+            print(f"  Checkpoint conversations uploaded: {len(report_result['checkpoint_conversations'])} customers")
+
         uploader.finish(
             duration_seconds=raw_summary.get("duration_seconds"),
             report_path=report_path,
+            chart_path=report_result["chart_path"] if report_result else None,
             raw_summary=raw_summary,
         )
         print(f"  Run ID:  {uploader.run_id}")

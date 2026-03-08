@@ -171,6 +171,8 @@ class SupabaseUploader:
                 "injection_succeeded": log.get("injection_succeeded", False),
                 "api_call_made": log.get("api_call_made", False),
                 "api_call_correct": log.get("api_call_correct", False),
+                "messages": log.get("messages", []),
+                "prompt": prompt,
             })
 
         if episode_rows:
@@ -224,6 +226,81 @@ class SupabaseUploader:
                 self._upload_file(
                     f"{self.run_id}/reward_chart.png", f.read(), "image/png"
                 )
+
+    def upload_checkpoint_comparisons(
+        self,
+        checkpoint_prompts: list[dict[str, Any]],
+        checkpoint_conversations: list[dict[str, Any]],
+    ):
+        """
+        Upload checkpoint comparison data to Supabase.
+
+        Tables:
+          checkpoint_prompts: one row per checkpoint (step X, Y, Z)
+            - run_id, step, label, prompt_text, mean_reward
+          checkpoint_conversations: one row per (persona × checkpoint)
+            - run_id, persona_id, true_intent, personality, social_engineering,
+              checkpoint_step, checkpoint_label, prompt_text,
+              reward, turns, intent_correct, injection_attempted,
+              injection_succeeded, messages (jsonb)
+        """
+        if not self._client:
+            return
+
+        # --- Upload checkpoint prompts ---
+        prompt_rows = []
+        for cp in checkpoint_prompts:
+            prompt_rows.append({
+                "run_id": self.run_id,
+                "step": cp["step"],
+                "label": cp["label"],
+                "prompt_text": cp["prompt"],
+                "mean_reward": cp.get("mean_reward", 0.0),
+            })
+
+        if prompt_rows:
+            try:
+                self._client.table("checkpoint_prompts").insert(prompt_rows).execute()
+                logger.info(
+                    "Inserted %d checkpoint_prompts rows", len(prompt_rows)
+                )
+            except Exception as e:
+                logger.error("Failed to insert checkpoint_prompts: %s", e)
+
+        # --- Upload checkpoint conversations (same customer × multiple agents) ---
+        conv_rows = []
+        for entry in checkpoint_conversations:
+            persona_id = entry["persona_id"]
+            true_intent = entry["true_intent"]
+            personality = entry["personality"]
+            se = entry["social_engineering"]
+
+            for conv in entry["conversations"]:
+                conv_rows.append({
+                    "run_id": self.run_id,
+                    "persona_id": persona_id,
+                    "true_intent": true_intent,
+                    "personality": personality,
+                    "social_engineering": se,
+                    "checkpoint_step": conv["step"],
+                    "checkpoint_label": conv["label"],
+                    "prompt_text": conv["prompt"],
+                    "reward": conv["reward"],
+                    "turns": conv["turns"],
+                    "intent_correct": conv["intent_correct"],
+                    "injection_attempted": conv["injection_attempted"],
+                    "injection_succeeded": conv["injection_succeeded"],
+                    "messages": conv["messages"],
+                })
+
+        if conv_rows:
+            try:
+                self._client.table("checkpoint_conversations").insert(conv_rows).execute()
+                logger.info(
+                    "Inserted %d checkpoint_conversations rows", len(conv_rows)
+                )
+            except Exception as e:
+                logger.error("Failed to insert checkpoint_conversations: %s", e)
 
     def _upload_file(self, path: str, data: bytes, content_type: str):
         """Upload a single file to Supabase Storage."""
