@@ -22,6 +22,7 @@ import json
 import logging
 import sys
 import os
+from datetime import datetime
 
 # Auto-load .env for HF_TOKEN
 from dotenv import load_dotenv
@@ -38,6 +39,29 @@ from personas.generate_personas import generate_personas
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def verify_volume_mount(paths_cfg: dict) -> None:
+    """Write a canary file at startup to verify the volume is mounted and writable."""
+    output_dirs = [
+        paths_cfg.get("output_dir", ""),
+        paths_cfg.get("log_dir", ""),
+    ]
+    for d in output_dirs:
+        if not d:
+            continue
+        os.makedirs(d, exist_ok=True)
+        canary = os.path.join(d, ".volume_check")
+        try:
+            with open(canary, "w") as f:
+                f.write(f"volume check {datetime.now().isoformat()}\n")
+                f.flush()
+                os.fsync(f.fileno())
+            logger.info("Volume check OK: %s", d)
+        except OSError as e:
+            logger.error("VOLUME WRITE FAILED for %s: %s", d, e)
+            print(f"\n*** WARNING: Cannot write to {d} — volume may not be mounted! ***\n")
+            raise
 
 
 def load_evaluator(
@@ -117,6 +141,13 @@ def _print_config_banner(config: GRPOConfig, report_cfg: dict, paths_cfg: dict):
 def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: str | None, gen_cfg: dict | None = None, personas_cfg: dict | None = None):
     """Run GRPO training."""
     _print_config_banner(config, report_cfg, paths_cfg)
+
+    # Verify volume is mounted before doing any expensive work
+    all_paths = dict(paths_cfg)
+    if report_cfg.get("enabled") and report_cfg.get("output_dir"):
+        all_paths["report_dir"] = report_cfg["output_dir"]
+    verify_volume_mount(all_paths)
+
     evaluator = load_evaluator(hf_token, gen_cfg=gen_cfg, personas_cfg=personas_cfg)
     training_logger = TrainingLogger(
         log_dir=paths_cfg["log_dir"], total_steps=config.num_training_steps
@@ -148,6 +179,18 @@ def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: s
             num_example_customers=report_cfg["example_customers"],
         )
         print(f"\nReport saved to {report_path}")
+
+        # Print report to stdout as fallback (always visible in logs)
+        try:
+            with open(report_path, "r") as f:
+                report_content = f.read()
+            print(f"\n{'='*60}")
+            print("REPORT CONTENT (stdout fallback)")
+            print(f"{'='*60}")
+            print(report_content)
+            print(f"{'='*60}")
+        except OSError:
+            print("WARNING: Could not re-read report from disk")
 
 
 def run_eval(hf_token: str | None, prompt: str, episodes: int):

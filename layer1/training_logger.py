@@ -36,6 +36,8 @@ class TrainingLogger:
         with open(self.log_path, "w") as f:
             f.write(f"Training Log — {self._start_time.isoformat()}\n")
             f.write(f"{'=' * 60}\n\n")
+            f.flush()
+            os.fsync(f.fileno())
 
     def log_iteration(self, step: int, prompt: str, eval_result: dict[str, Any]):
         """Log a single training iteration (one prompt evaluated)."""
@@ -59,6 +61,11 @@ class TrainingLogger:
             f.write(f"Min/Max: {entry['min_reward']:.1f} / {entry['max_reward']:.1f}\n")
             f.write(f"Episodes: {entry['num_episodes']}\n")
             f.write(f"---\n\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+        # Incremental save — persist JSON after every step so data survives crashes
+        self.save_json()
 
         logger.info("Logged step %d: mean_reward=%.1f", step, entry["mean_reward"])
 
@@ -76,6 +83,8 @@ class TrainingLogger:
         }
         with open(self.json_path, "w") as f:
             json.dump(data, f, indent=2, default=str)
+            f.flush()
+            os.fsync(f.fileno())
         logger.info("Training data saved to %s", self.json_path)
 
     def get_checkpoint_indices(self) -> list[int]:
@@ -418,3 +427,5 @@ class ReportGenerator:
 
         with open(report_path, "w") as f:
             f.write("\n".join(lines))
+            f.flush()
+            os.fsync(f.fileno())
