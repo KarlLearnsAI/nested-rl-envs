@@ -314,6 +314,7 @@ def run_eval(hf_token: str | None, prompt: str, episodes: int):
 
 
 def main():
+    print("Version: 0.0")
     parser = argparse.ArgumentParser(description="Layer 1 — GRPO Prompt Optimizer")
     parser.add_argument(
         "--mode", choices=["train", "eval"], default="train",
