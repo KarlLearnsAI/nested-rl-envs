@@ -70,8 +70,33 @@ class SupabaseUploader:
 
         if self._client:
             logger.info("SupabaseUploader ready: run_id=%s", run_id)
+            self._write_init_row()
         else:
             logger.warning("SupabaseUploader: no client — uploads will be skipped")
+
+    def _write_init_row(self):
+        """Write an init row to verify DB connectivity at startup."""
+        try:
+            run_row = {
+                "run_id": self.run_id,
+                "started_at": self._started_at,
+                "duration_seconds": None,
+                "total_steps": 0,
+                "total_episodes": 0,
+                "best_step": 0,
+                "best_mean_reward": 0.0,
+                "mean_rewards": [],
+                "min_rewards": [],
+                "max_rewards": [],
+                "config": self.config,
+            }
+            self._client.table("training_runs").upsert(
+                run_row, on_conflict="run_id"
+            ).execute()
+            self._run_created = True
+            logger.info("DB init row written successfully (run_id=%s)", self.run_id)
+        except Exception as e:
+            logger.error("DB init row FAILED — check connection: %s", e)
 
     @property
     def enabled(self) -> bool:
