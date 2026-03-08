@@ -69,7 +69,7 @@ class CustomerSimulator:
     - api: uses HF Inference API (pass hf_token=...)
     """
 
-    MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
+    MODEL_ID = "unsloth/Meta-Llama-3.1-8B-Instruct"
 
     def __init__(
         self,

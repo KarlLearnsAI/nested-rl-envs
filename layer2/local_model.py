@@ -17,7 +17,7 @@ _shared_instance: LocalLlamaModel | None = None
 
 
 def get_shared_model(
-    model_id: str = "meta-llama/Llama-3.1-8B-Instruct",
+    model_id: str = "unsloth/Meta-Llama-3.1-8B-Instruct",
     hf_token: str | None = None,
     device: str = "auto",
 ) -> LocalLlamaModel:
@@ -38,7 +38,7 @@ class LocalLlamaModel:
 
     def __init__(
         self,
-        model_id: str = "meta-llama/Llama-3.1-8B-Instruct",
+        model_id: str = "unsloth/Meta-Llama-3.1-8B-Instruct",
         hf_token: str | None = None,
         device: str = "auto",
     ):
