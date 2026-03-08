@@ -32,7 +32,7 @@ class HFAgent:
     - api: uses HF Inference API (pass hf_token=...)
     """
 
-    DEFAULT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+    DEFAULT_MODEL = "unsloth/Meta-Llama-3.1-8B-Instruct"
 
     def __init__(
         self,
