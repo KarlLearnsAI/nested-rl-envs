@@ -3,7 +3,7 @@ Layer 1 — Executable GRPO training script.
 
 Usage:
     # Full GPU training (requires Colab/GPU + train deps)
-    python -m layer1.train --mode train --steps 50
+    python -m layer1.train --mode train --steps 10
 
     # CPU mock optimization (evaluates hand-written prompts)
     python -m layer1.train --mode mock --episodes 20

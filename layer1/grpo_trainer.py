@@ -37,8 +37,8 @@ class GRPOConfig:
 
     # GRPO
     num_candidates: int = 4         # N candidate prompts per step
-    episodes_per_candidate: int = 10  # K episodes to evaluate each candidate
-    num_training_steps: int = 50
+    episodes_per_candidate: int = 7   # K episodes to evaluate each candidate
+    num_training_steps: int = 10
     learning_rate: float = 5e-5
     max_prompt_length: int = 512
 
