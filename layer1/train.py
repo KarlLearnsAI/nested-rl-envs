@@ -168,6 +168,26 @@ def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: s
     )
     print(f"\nEvaluation: mean_reward={result['mean_reward']:.1f}")
 
+    # Always output raw training summary (arrays for post-hoc analysis)
+    print(f"\n{'='*60}")
+    print("RAW TRAINING SUMMARY")
+    print(f"{'='*60}")
+    raw_summary = training_logger.generate_raw_summary()
+    summary_path = training_logger.save_raw_summary(paths_cfg.get("log_dir"))
+    print(f"Saved to: {summary_path}")
+    print(f"\nSteps:        {raw_summary['steps']}")
+    print(f"Mean rewards: {raw_summary['mean_rewards']}")
+    print(f"Min rewards:  {raw_summary['min_rewards']}")
+    print(f"Max rewards:  {raw_summary['max_rewards']}")
+    print(f"Best step:    {raw_summary['best_step']} (reward={raw_summary['best_mean_reward']})")
+    print(f"Total episodes: {raw_summary['total_episodes']}")
+    print(f"Duration:     {raw_summary['duration_seconds']}s")
+    print(f"\nPer-step episode rewards:")
+    for step, rewards in zip(raw_summary["steps"], raw_summary["all_episode_rewards"]):
+        print(f"  Step {step:3d}: {rewards}")
+    print(f"\nFull raw JSON: {summary_path}")
+    print(f"{'='*60}")
+
     if report_cfg["enabled"]:
         print(f"\n{'='*60}")
         print("GENERATING TRAINING REPORT...")

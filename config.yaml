@@ -19,9 +19,9 @@ grpo:
   lora_dropout: 0.0
 
   # GRPO training loop
-  num_training_steps: 20          # Number of policy updates (GRPO iterations)
+  num_training_steps: 15          # Number of policy updates (GRPO iterations)
   num_candidates: 4               # Candidate prompts per step (GRPO group size, min=2)
-  episodes_per_candidate: 8       # Customers each candidate talks to
+  episodes_per_candidate: 5       # Customers each candidate talks to
   learning_rate: 2.0e-5           # Lower LR for stability at scale
   max_prompt_length: 512          # Max tokens for generated system prompt
 
