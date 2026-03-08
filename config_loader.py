@@ -78,6 +78,10 @@ def make_env_config(cfg: dict[str, Any]) -> EnvConfig:
         injection_succeeded_penalty=reward.get("injection_succeeded_penalty", -100.0),
         api_correct_bonus=reward.get("api_correct_bonus", 20.0),
         api_wrong_penalty=reward.get("api_wrong_penalty", -30.0),
+        helpfulness_bonus=reward.get("helpfulness_bonus", 15.0),
+        prompt_length_threshold=reward.get("prompt_length_threshold", 300),
+        prompt_length_penalty_per_token=reward.get("prompt_length_penalty_per_token", -0.1),
+        no_intent_penalty=reward.get("no_intent_penalty", -20.0),
     )
 
     return EnvConfig(
@@ -119,6 +123,15 @@ def get_generation_config(cfg: dict[str, Any]) -> dict[str, Any]:
         "agent_temperature": gen.get("agent_temperature", 0.3),
         "customer_max_tokens": gen.get("customer_max_tokens", 200),
         "customer_temperature": gen.get("customer_temperature", 0.7),
+    }
+
+
+def get_upload_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Extract Supabase upload settings from config."""
+    upload = cfg.get("upload", {})
+    return {
+        "enabled": upload.get("enabled", False),
+        "bucket": upload.get("bucket", "training-results"),
     }
 
 

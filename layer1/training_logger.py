@@ -96,6 +96,87 @@ class TrainingLogger:
             return [0, n - 1]
         return [0, n // 2, n - 1]
 
+    def generate_raw_summary(self) -> dict[str, Any]:
+        """
+        Generate a raw training summary with arrays for easy post-hoc analysis.
+
+        Returns a dict with:
+          - steps: [1, 2, 3, ...]
+          - mean_rewards: [30.0, 45.0, ...]
+          - min_rewards: [10.0, 20.0, ...]
+          - max_rewards: [50.0, 70.0, ...]
+          - all_episode_rewards: [[r1, r2, ...], [r1, r2, ...], ...]  (per step)
+          - per_episode_metrics: [{turns, intent_correct, ...}, ...]  (flattened)
+          - prompts: ["prompt at step 1", ...]
+          - best_step: step index with highest mean reward
+          - best_mean_reward: highest mean reward achieved
+          - duration_seconds: total training time
+        """
+        steps = []
+        mean_rewards = []
+        min_rewards = []
+        max_rewards = []
+        all_episode_rewards = []
+        per_episode_metrics = []
+        prompts = []
+
+        for it in self.iterations:
+            steps.append(it["step"])
+            mean_rewards.append(it["mean_reward"])
+            min_rewards.append(it["min_reward"])
+            max_rewards.append(it["max_reward"])
+            all_episode_rewards.append(it.get("rewards", []))
+            prompts.append(it["prompt"])
+
+            # Flatten per-episode metrics for this step
+            for ei, log in enumerate(it.get("logs", [])):
+                per_episode_metrics.append({
+                    "step": it["step"],
+                    "episode": ei,
+                    "reward": it["rewards"][ei] if ei < len(it.get("rewards", [])) else None,
+                    "turns": log.get("turns", 0),
+                    "intent_captured": log.get("intent_captured", False),
+                    "intent_correct": log.get("intent_correct", False),
+                    "true_intent": log.get("true_intent", ""),
+                    "agent_intent": log.get("agent_intent", ""),
+                    "injection_attempted": log.get("injection_attempted", False),
+                    "injection_succeeded": log.get("injection_succeeded", False),
+                    "api_call_made": log.get("api_call_made", False),
+                    "api_call_correct": log.get("api_call_correct", False),
+                })
+
+        duration = (datetime.now() - self._start_time).total_seconds()
+        best_idx = mean_rewards.index(max(mean_rewards)) if mean_rewards else 0
+
+        return {
+            "steps": steps,
+            "mean_rewards": mean_rewards,
+            "min_rewards": min_rewards,
+            "max_rewards": max_rewards,
+            "all_episode_rewards": all_episode_rewards,
+            "per_episode_metrics": per_episode_metrics,
+            "prompts": prompts,
+            "best_step": steps[best_idx] if steps else None,
+            "best_mean_reward": max(mean_rewards) if mean_rewards else None,
+            "total_episodes": len(per_episode_metrics),
+            "duration_seconds": round(duration, 1),
+        }
+
+    def save_raw_summary(self, output_dir: str | None = None) -> str:
+        """Save raw summary to a JSON file and print to stdout. Returns file path."""
+        summary = self.generate_raw_summary()
+        save_dir = output_dir or os.path.dirname(self.json_path)
+        os.makedirs(save_dir, exist_ok=True)
+        path = os.path.join(save_dir, f"raw_summary_{self.timestamp}.json")
+
+        with open(path, "w") as f:
+            json.dump(summary, f, indent=2, default=str)
+            f.flush()
+            os.fsync(f.fileno())
+
+        logger.info("Raw training summary saved to %s", path)
+        return path
+
 
 def _select_diverse_personas(
     personas: list[CustomerPersona], count: int = 10

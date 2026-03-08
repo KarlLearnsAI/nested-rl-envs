@@ -30,9 +30,10 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config_loader import load_config, make_grpo_config, make_env_config, get_report_config, get_paths, get_generation_config, get_personas_config
+from config_loader import load_config, make_grpo_config, make_env_config, get_report_config, get_paths, get_generation_config, get_personas_config, get_upload_config
 from layer1.grpo_trainer import GRPOConfig, GRPOPromptTrainer, PromptEvaluator
 from layer1.training_logger import TrainingLogger, ReportGenerator
+from layer1.upload import upload_training_results
 from layer2.customer_sim import CustomerPersona, CustomerSimulator
 from layer2.hf_agent import HFAgent
 from personas.generate_personas import generate_personas
@@ -138,7 +139,7 @@ def _print_config_banner(config: GRPOConfig, report_cfg: dict, paths_cfg: dict):
     print(f"{'='*70}\n")
 
 
-def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: str | None, gen_cfg: dict | None = None, personas_cfg: dict | None = None):
+def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: str | None, gen_cfg: dict | None = None, personas_cfg: dict | None = None, upload_cfg: dict | None = None):
     """Run GRPO training."""
     _print_config_banner(config, report_cfg, paths_cfg)
 
@@ -168,6 +169,27 @@ def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: s
     )
     print(f"\nEvaluation: mean_reward={result['mean_reward']:.1f}")
 
+    # Always output raw training summary (arrays for post-hoc analysis)
+    print(f"\n{'='*60}")
+    print("RAW TRAINING SUMMARY")
+    print(f"{'='*60}")
+    raw_summary = training_logger.generate_raw_summary()
+    summary_path = training_logger.save_raw_summary(paths_cfg.get("log_dir"))
+    print(f"Saved to: {summary_path}")
+    print(f"\nSteps:        {raw_summary['steps']}")
+    print(f"Mean rewards: {raw_summary['mean_rewards']}")
+    print(f"Min rewards:  {raw_summary['min_rewards']}")
+    print(f"Max rewards:  {raw_summary['max_rewards']}")
+    print(f"Best step:    {raw_summary['best_step']} (reward={raw_summary['best_mean_reward']})")
+    print(f"Total episodes: {raw_summary['total_episodes']}")
+    print(f"Duration:     {raw_summary['duration_seconds']}s")
+    print(f"\nPer-step episode rewards:")
+    for step, rewards in zip(raw_summary["steps"], raw_summary["all_episode_rewards"]):
+        print(f"  Step {step:3d}: {rewards}")
+    print(f"\nFull raw JSON: {summary_path}")
+    print(f"{'='*60}")
+
+    report_path = None
     if report_cfg["enabled"]:
         print(f"\n{'='*60}")
         print("GENERATING TRAINING REPORT...")
@@ -191,6 +213,29 @@ def run_train(config: GRPOConfig, report_cfg: dict, paths_cfg: dict, hf_token: s
             print(f"{'='*60}")
         except OSError:
             print("WARNING: Could not re-read report from disk")
+
+    # Upload to Supabase if configured
+    upload_cfg = upload_cfg or {}
+    if upload_cfg.get("enabled") and os.environ.get("SUPABASE_URL"):
+        print(f"\n{'='*60}")
+        print("UPLOADING TO SUPABASE...")
+        print(f"{'='*60}")
+        upload_result = upload_training_results(
+            raw_summary=raw_summary,
+            run_id=training_logger.timestamp,
+            bucket=upload_cfg.get("bucket", "training-results"),
+            report_path=report_path if report_cfg["enabled"] else None,
+            chart_path=None,  # chart path is internal to ReportGenerator
+            config={"grpo": config.__dict__, "report": report_cfg, "paths": paths_cfg},
+        )
+        print(f"  Run ID:  {upload_result['run_id']}")
+        print(f"  Files:   {len(upload_result['storage_paths'])} uploaded")
+        print(f"  DB rows: {upload_result['db_rows']}")
+        if upload_result.get("error"):
+            print(f"  Error:   {upload_result['error']}")
+        print(f"{'='*60}")
+    elif upload_cfg.get("enabled"):
+        print("\nSupabase upload enabled but SUPABASE_URL not set — skipping")
 
 
 def run_eval(hf_token: str | None, prompt: str, episodes: int):
@@ -248,6 +293,7 @@ def main():
     paths_cfg = get_paths(cfg)
     gen_cfg = get_generation_config(cfg)
     personas_cfg = get_personas_config(cfg)
+    upload_cfg = get_upload_config(cfg)
 
     # CLI overrides
     if args.steps is not None:
@@ -269,7 +315,7 @@ def main():
         report_cfg["example_customers"] = args.example_customers
 
     if args.mode == "train":
-        run_train(grpo_config, report_cfg, paths_cfg, args.hf_token, gen_cfg=gen_cfg, personas_cfg=personas_cfg)
+        run_train(grpo_config, report_cfg, paths_cfg, args.hf_token, gen_cfg=gen_cfg, personas_cfg=personas_cfg, upload_cfg=upload_cfg)
     elif args.mode == "eval":
         if not args.prompt:
             parser.error("--prompt is required for eval mode")
