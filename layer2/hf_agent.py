@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any
 
 try:
@@ -48,6 +49,7 @@ class HFAgent:
         system_prompt: str,
         conversation_history: list[dict[str, str]],
         observation: dict[str, Any],
+        max_retries: int = 4,
     ) -> str:
         """
         Generate an agent response.
@@ -74,18 +76,31 @@ class HFAgent:
         if customer_msg:
             messages.append({"role": "user", "content": customer_msg})
 
-        try:
-            response = self._client.chat_completion(
-                model=self.model_id,
-                messages=messages,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as e:
-            if "402" in str(e) or "Payment Required" in str(e):
-                raise RuntimeError(
-                    "HF API credits depleted. "
-                    "Get more credits at https://huggingface.co/settings/billing"
-                ) from e
-            raise
+        last_err = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = self._client.chat_completion(
+                    model=self.model_id,
+                    messages=messages,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                err_str = str(e)
+                if "402" in err_str or "Payment Required" in err_str:
+                    raise RuntimeError(
+                        "HF API credits depleted. "
+                        "Get more credits at https://huggingface.co/settings/billing"
+                    ) from e
+                if any(code in err_str for code in ("500", "503", "429", "timeout", "Timeout")):
+                    last_err = e
+                    wait = 2 ** (attempt + 1)  # 2, 4, 8, 16s
+                    logger.warning(
+                        "HF API error (attempt %d/%d), retrying in %ds: %s",
+                        attempt + 1, max_retries + 1, wait, e,
+                    )
+                    time.sleep(wait)
+                    continue
+                raise
+        raise last_err  # type: ignore[misc]

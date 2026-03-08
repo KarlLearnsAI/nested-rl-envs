@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -81,6 +82,7 @@ class CustomerSimulator:
         persona: CustomerPersona,
         conversation_history: list[dict[str, str]],
         agent_message: str,
+        max_retries: int = 4,
     ) -> str:
         """Generate the next customer reply given the conversation so far."""
         if self._client is None:
@@ -89,15 +91,29 @@ class CustomerSimulator:
                 "Set HF_TOKEN environment variable with a valid HuggingFace token."
             )
 
-        try:
-            return self._generate_llm_reply(persona, conversation_history, agent_message)
-        except Exception as e:
-            if "402" in str(e) or "Payment Required" in str(e):
-                raise RuntimeError(
-                    "HF API credits depleted. "
-                    "Get more credits at https://huggingface.co/settings/billing"
-                ) from e
-            raise
+        last_err = None
+        for attempt in range(max_retries + 1):
+            try:
+                return self._generate_llm_reply(persona, conversation_history, agent_message)
+            except Exception as e:
+                err_str = str(e)
+                if "402" in err_str or "Payment Required" in err_str:
+                    raise RuntimeError(
+                        "HF API credits depleted. "
+                        "Get more credits at https://huggingface.co/settings/billing"
+                    ) from e
+                # Retry on transient server errors (500, 503, 429, timeouts)
+                if any(code in err_str for code in ("500", "503", "429", "timeout", "Timeout")):
+                    last_err = e
+                    wait = 2 ** (attempt + 1)  # 2, 4, 8, 16s
+                    logger.warning(
+                        "HF API error (attempt %d/%d), retrying in %ds: %s",
+                        attempt + 1, max_retries + 1, wait, e,
+                    )
+                    time.sleep(wait)
+                    continue
+                raise
+        raise last_err  # type: ignore[misc]
 
     def _generate_llm_reply(
         self,
