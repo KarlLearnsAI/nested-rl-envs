@@ -117,7 +117,7 @@ def run_train(args):
     print(best_prompt)
 
     # Evaluate the trained prompt
-    result = evaluator.evaluate_prompt(best_prompt, num_episodes=50)
+    result = evaluator.evaluate_prompt(best_prompt, num_episodes=args.episodes)
     print(f"\nEvaluation: mean_reward={result['mean_reward']:.1f}")
 
     if args.report:
@@ -158,8 +158,8 @@ def main():
         default="mock",
         help="Training mode: train (GPU), mock (CPU), eval (single prompt)",
     )
-    parser.add_argument("--episodes", type=int, default=20, help="Episodes per evaluation")
-    parser.add_argument("--steps", type=int, default=50, help="GRPO training steps (train mode)")
+    parser.add_argument("--episodes", type=int, default=7, help="Episodes per evaluation")
+    parser.add_argument("--steps", type=int, default=10, help="GRPO training steps (train mode)")
     parser.add_argument("--output", type=str, default=None, help="Save results to JSON")
     parser.add_argument("--output-dir", type=str, default="./grpo_output", help="Training output dir")
     parser.add_argument("--hf-token", type=str, default=None, help="HuggingFace API token")
@@ -174,9 +174,9 @@ def main():
                         help="Directory for report output")
     parser.add_argument("--log-dir", type=str, default="./logs",
                         help="Directory for training logs")
-    parser.add_argument("--eval-episodes", type=int, default=30,
+    parser.add_argument("--eval-episodes", type=int, default=5,
                         help="Episodes per checkpoint for report evaluation")
-    parser.add_argument("--example-customers", type=int, default=10,
+    parser.add_argument("--example-customers", type=int, default=3,
                         help="Number of example customers in report")
     args = parser.parse_args()
 
