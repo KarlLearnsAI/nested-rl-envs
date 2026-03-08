@@ -297,11 +297,22 @@ class GRPOPromptTrainer:
             max_seq_length=self.config.max_seq_length,
         )
 
+        def formatting_func(example):
+            """Format each SFT example as a chat conversation."""
+            messages = [
+                {"role": "user", "content": example["prompt"]},
+                {"role": "assistant", "content": example["completion"]},
+            ]
+            return self._tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=False,
+            )
+
         trainer = SFTTrainer(
             model=self._model,
             args=sft_config,
             train_dataset=dataset,
             tokenizer=self._tokenizer,
+            formatting_func=formatting_func,
         )
 
         trainer.train()
