@@ -1,12 +1,9 @@
 """
-Layer 1 — Executable GRPO training script.
+Layer 1 — GRPO training script for prompt optimization.
 
 Usage:
-    # Full GPU training (requires Colab/GPU + train deps)
-    python -m layer1.train --mode train --steps 10
-
-    # Mock optimization (evaluates hand-written prompts via real LLM agent)
-    python -m layer1.train --mode mock --episodes 20
+    # GRPO training (requires GPU + train deps)
+    python -m layer1.train --steps 10
 
     # Evaluate a single prompt
     python -m layer1.train --mode eval --prompt "You are a helpful agent."
@@ -29,7 +26,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from layer1.grpo_trainer import (
     GRPOConfig,
     GRPOPromptTrainer,
-    MockPromptOptimizer,
     PromptEvaluator,
     build_meta_prompt,
 )
@@ -64,72 +60,25 @@ def load_evaluator(hf_token: str | None = None) -> PromptEvaluator:
     return PromptEvaluator(personas=personas, simulator=simulator, agent_fn=agent)
 
 
-def _print_config_banner(mode: str, args):
+def _print_config_banner(args):
     """Print training configuration with both technical and domain names."""
     print(f"\n{'='*70}")
     print(f"  TRAINING CONFIGURATION")
     print(f"{'='*70}")
-    print(f"  Mode:                          {mode}")
-    if mode == "mock":
-        n_prompts = len(MockPromptOptimizer.CANDIDATE_PROMPTS)
-        print(f"  Steps / System Prompts:        {n_prompts} (hand-written)")
-    else:
-        print(f"  Steps / GRPO Iterations:       {args.steps}")
-        print(f"  Candidates / Customer Reps:    4 per step (GRPO-generated)")
+    print(f"  Steps / GRPO Iterations:       {args.steps}")
+    print(f"  Candidates / Customer Reps:    4 per step (GRPO-generated)")
     print(f"  Episodes / Customers:          {args.episodes} per prompt")
     print(f"  Customer Rep Agent:            Llama 3.1 8B (HF Inference API)")
     print(f"  Customer Simulator:            Llama 3.1 8B (HF Inference API)")
-    print(f"  Total LLM conversations:       ~{_estimate_conversations(mode, args)}")
+    total = args.steps * 4 * args.episodes
+    print(f"  Total LLM conversations:       ~{total}")
     print(f"  Report generation:             {'yes' if args.report else 'no'}")
     print(f"{'='*70}\n")
 
 
-def _estimate_conversations(mode: str, args) -> int:
-    if mode == "mock":
-        return len(MockPromptOptimizer.CANDIDATE_PROMPTS) * args.episodes
-    return args.steps * 4 * args.episodes  # steps × candidates × episodes
-
-
-def run_mock(args):
-    """Run mock optimization with hand-written prompts."""
-    _print_config_banner("mock", args)
-    evaluator = load_evaluator(args.hf_token)
-    training_logger = TrainingLogger(
-        log_dir=args.log_dir,
-        total_steps=len(MockPromptOptimizer.CANDIDATE_PROMPTS),
-    )
-    optimizer = MockPromptOptimizer(evaluator, logger=training_logger)
-    result = optimizer.optimize(num_episodes_per_prompt=args.episodes)
-
-    print(f"\n{'='*60}")
-    print("MOCK OPTIMIZATION RESULTS")
-    print(f"{'='*60}")
-    for r in optimizer.results:
-        print(f"  Prompt {r['prompt_index']}: reward={r['mean_reward']:.1f}")
-    print(f"\nBest prompt (reward={result['best_reward']:.1f}):")
-    print(result["best_prompt"])
-
-    if args.output:
-        with open(args.output, "w") as f:
-            json.dump(result, f, indent=2, default=str)
-        print(f"\nResults saved to {args.output}")
-
-    if args.report:
-        print(f"\n{'='*60}")
-        print("GENERATING TRAINING REPORT...")
-        print(f"{'='*60}")
-        report_gen = ReportGenerator(evaluator, training_logger)
-        report_path = report_gen.generate_report(
-            output_dir=args.report_dir,
-            num_eval_episodes=args.eval_episodes,
-            num_example_customers=args.example_customers,
-        )
-        print(f"\nReport saved to {report_path}")
-
-
 def run_train(args):
-    """Run full GRPO training (requires GPU)."""
-    _print_config_banner("train", args)
+    """Run GRPO training."""
+    _print_config_banner(args)
     evaluator = load_evaluator(args.hf_token)
     training_logger = TrainingLogger(log_dir=args.log_dir, total_steps=args.steps)
     config = GRPOConfig(
@@ -185,12 +134,12 @@ def main():
     parser = argparse.ArgumentParser(description="Layer 1 — GRPO Prompt Optimizer")
     parser.add_argument(
         "--mode",
-        choices=["train", "mock", "eval"],
-        default="mock",
-        help="Training mode: train (GPU), mock (CPU), eval (single prompt)",
+        choices=["train", "eval"],
+        default="train",
+        help="Mode: train (GRPO RL training), eval (evaluate a single prompt)",
     )
     parser.add_argument("--episodes", type=int, default=7, help="Episodes per evaluation")
-    parser.add_argument("--steps", type=int, default=10, help="GRPO training steps (train mode)")
+    parser.add_argument("--steps", type=int, default=10, help="GRPO training steps")
     parser.add_argument("--output", type=str, default=None, help="Save results to JSON")
     parser.add_argument("--output-dir", type=str, default="./grpo_output", help="Training output dir")
     parser.add_argument("--hf-token", type=str, default=None, help="HuggingFace API token")
@@ -211,8 +160,6 @@ def main():
 
     if args.mode == "train":
         run_train(args)
-    elif args.mode == "mock":
-        run_mock(args)
     elif args.mode == "eval":
         if not args.prompt:
             parser.error("--prompt is required for eval mode")
