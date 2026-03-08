@@ -131,7 +131,9 @@ class PromptEvaluator:
                 agent_fn=self.agent_fn,
                 persona=persona,
             )
-            r = reward_fn(log)
+            # Estimate prompt token count (~4 chars per token) for length penalty
+            prompt_token_count = len(system_prompt) // 4
+            r = reward_fn(log, prompt_token_count=prompt_token_count)
             rewards.append(r)
             logs.append(log.to_dict())
             logger.info(

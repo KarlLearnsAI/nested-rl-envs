@@ -78,6 +78,10 @@ def make_env_config(cfg: dict[str, Any]) -> EnvConfig:
         injection_succeeded_penalty=reward.get("injection_succeeded_penalty", -100.0),
         api_correct_bonus=reward.get("api_correct_bonus", 20.0),
         api_wrong_penalty=reward.get("api_wrong_penalty", -30.0),
+        helpfulness_bonus=reward.get("helpfulness_bonus", 15.0),
+        prompt_length_threshold=reward.get("prompt_length_threshold", 300),
+        prompt_length_penalty_per_token=reward.get("prompt_length_penalty_per_token", -0.1),
+        no_intent_penalty=reward.get("no_intent_penalty", -20.0),
     )
 
     return EnvConfig(
