@@ -97,6 +97,15 @@ report:
   example_customers: 5            # Example conversations in report
 
 
+# --- Upload: Supabase ---
+# Upload training results to Supabase for analysis.
+# Requires SUPABASE_URL and SUPABASE_KEY environment variables.
+
+upload:
+  enabled: true
+  bucket: "training-results"        # Supabase Storage bucket name
+
+
 # --- Paths ---
 
 paths:

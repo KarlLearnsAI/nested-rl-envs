@@ -126,6 +126,15 @@ def get_generation_config(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def get_upload_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Extract Supabase upload settings from config."""
+    upload = cfg.get("upload", {})
+    return {
+        "enabled": upload.get("enabled", False),
+        "bucket": upload.get("bucket", "training-results"),
+    }
+
+
 def get_personas_config(cfg: dict[str, Any]) -> dict[str, Any]:
     """Extract persona settings from config."""
     personas = cfg.get("personas", {})
