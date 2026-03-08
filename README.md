@@ -1,3 +1,13 @@
+---
+title: Nested RL Envs
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Final Architecture: Self-Improving Oversight for AI Customer Support
 
 ## Prize Targets
