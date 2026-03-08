@@ -106,4 +106,4 @@ Qwen2.5-3B generates 2 candidate system prompts
 """)
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name="0.0.0.0", server_port=7860)
