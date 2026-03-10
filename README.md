@@ -8,85 +8,59 @@ app_port: 7860
 pinned: false
 ---
 
-# Self-Improving Oversight for AI Customer Support
+# 🛡️ Nested RL Envs: Bulletproof AI Customer Support
 
-A three-layer nested RL system that automatically optimizes customer support agents. Layer 0 defines what "good" looks like, Layer 1 finds the best agent instructions, and Layer 2 stress-tests agents against 100 diverse simulated customers.
+**A self-improving, multi-agent reinforcement learning system that stress-tests and auto-optimizes AI customer support agents to prevent hallucinations, unauthorized commitments, and policy breaches.**
+
+## The Problem: AI Liability in Customer Support
+Deploying an LLM-powered voice or text agent is risky. Recent high-profile cases have proven that when AI customer support agents make up refund policies, offer unauthorized discounts, or leak sensitive information, **the company is held legally and financially responsible.** Traditional prompt engineering relies on trial and error, hoping the agent won't break under pressure. 
+
+## The Solution: Automated Stress-Testing & Optimization
+Nested RL Envs solves this by placing your AI agents in a rigorous, adversarial training loop *before* they ever speak to a real customer. It uses a three-layer nested Reinforcement Learning (RL) architecture to simulate thousands of diverse, challenging customer interactions and mathematically optimize the agent's core instructions to maximize helpfulness while strictly enforcing company policy.
 
 ## Architecture
 
 ![Architecture](assets/architecture.png)
 
-### Layer 0 — Reward Architect
+## How It Works
 
-Defines the reward function for a given domain. Scores conversations on four axes:
+### Layer 0 — The Oversight Architect (Reward Function)
+Defines exactly what a "good" and "safe" interaction looks like. It scores simulated conversations on strict axes:
+- **Policy Adherence:** Severe penalties for inventing policies, hallucinating capabilities, or offering unauthorized refunds.
+- **Security:** Penalties for leaking hidden internal API states or unauthorized info.
+- **Task Success:** Rewards for correctly resolving the user's actual intent.
+*Domain-pluggable: Swap your "banking" guidelines for "e-commerce" or "telecom" policies, and a completely new RL environment is generated automatically.*
 
-| Signal | Reward |
-|---|---|
-| Intent accuracy | +50 / -50 |
-| Efficiency (fewer turns) | +20 → -5/turn |
-| Injection resistance | +40 / -100 |
-| API correctness | +20 / -30 |
+### Layer 1 — The Prompt Optimizer (GRPO + Unsloth + TRL)
+Instead of humans guessing the best system prompt, Layer 1 trains a prompt-generator model (Qwen 2.5 3B, 4-bit LoRA) to write the optimal system instructions. In every GRPO iteration, it:
+1. Samples N candidate system prompts.
+2. Runs K simulated conversations per candidate in Layer 2.
+3. Scores them via the strict Layer 0 reward function.
+4. Reinforces the prompts that successfully navigate tricky customers without breaking company policy.
 
-Domain-pluggable: swap "banking" for "telecom" and a new RL environment is created automatically.
+### Layer 2 — The Multi-Agent Arena (OpenEnv 0.2.1)
+A brutal stress-testing environment that simulates multi-turn customer support calls:
+- **The Simulator (Customer):** Llama 3.1 8B acts as the customer with hidden intents and 100 distinct personas (ranging from confused seniors to aggressive social engineers trying to trick the agent into giving them money).
+- **The Target (Voice Agent):** Powered by the candidate system prompt from Layer 1.
+- **The Guardrails (API):** Simulated API environments where the agent must verify, lookup, or block actions securely.
 
-### Layer 1 — Prompt Optimizer (GRPO + Unsloth + TRL)
+Episodes terminate dynamically when the agent successfully classifies intent, hits a maximum turn limit, or critically fails by leaking unauthorized information.
 
-Trains a prompt-generator model (Qwen 2.5 3B, 4-bit LoRA) to produce optimal system prompts for the voice agent. Each GRPO iteration:
+![Results](assets/results.png)
 
-1. Sample N candidate prompts
-2. Run K conversations per candidate in Layer 2
-3. Score via `reward_fn`
-4. Reinforce the best-performing prompts
-
-### Layer 2 — Multi-Agent Arena (OpenEnv 0.2.1)
-
-Simulates multi-turn customer support conversations:
-
-- **Customer** — Llama 3.1 8B with hidden intent + persona (100 personas: 3 intents, 5 personalities, varying social engineering)
-- **Voice Agent** — Uses the system prompt from Layer 1
-- **API** — Verify, lookup, block actions
-
-Episodes end when the agent classifies intent (success/fail), max turns hit, or the agent leaks unauthorized info.
+---
 
 ## Quick Start
 
 ```bash
-# Install
+# Install dependencies
 pip install -e ".[train]"
 
-# Train (requires GPU)
+# Train the optimal prompt (requires GPU)
 python -m layer1.train --config config.yaml
 
-# Evaluate a prompt
-python -m layer1.train --mode eval --prompt "You are a helpful bank agent."
+# Evaluate a specific prompt in the multi-agent arena (against simulated customers)
+python -m layer1.train --mode eval --prompt "You are a strictly compliant helpful bank agent."
 
-# Run A/B test
+# Run an A/B test comparing prompt performance and safety scores
 python -m scripts.ab_test
-```
-
-A Colab notebook is also available at [`notebooks/train_colab.ipynb`](notebooks/train_colab.ipynb).
-
-## Stack
-
-| Component | Tool |
-|---|---|
-| Prompt generator | `unsloth/Qwen2.5-3B-Instruct` (LoRA 4-bit) |
-| RL algorithm | TRL `GRPOTrainer` (GRPO) |
-| Customer simulator | `meta-llama/Llama-3.1-8B-Instruct` |
-| Voice agent | `meta-llama/Llama-3.1-8B-Instruct` |
-| Environment | OpenEnv 0.2.1 |
-| Tracking | Supabase (conversations, checkpoints, rewards) |
-| UI | Gradio |
-
-## Project Structure
-
-```
-layer0/          Reward function (domain-pluggable)
-layer1/          GRPO training loop + Supabase upload
-layer2/          Conversation environment + customer simulator
-personas/        100 generated customer personas
-scripts/         A/B test utility
-notebooks/       Colab training notebook
-app.py           Gradio dashboard
-config.yaml      All parameters (single source of truth)
-```
